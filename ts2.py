@@ -9,6 +9,7 @@ from appium.options.android import UiAutomator2Options
 import base64
 import os
 import threading
+import shutil
 
 # Настройки для подключения к Appium серверу и запуска приложения
 options = UiAutomator2Options()
@@ -17,6 +18,13 @@ options.app_activity = 'com.google.firebase.MessagingUnityPlayerActivity'  # О�
 options.device_name = 'device'  # Имя устройства (если требуется)
 options.no_reset = True  # Сохраняет данные приложения между запусками
 options.full_reset = False  # Полный сброс приложения при запуске отключен
+
+# Функция для очистки папки со скриншотами
+def clear_screenshot_directory(directory):
+    """Очищает папку со скриншотами при запуске скрипта."""
+    if os.path.exists(directory):
+        shutil.rmtree(directory)  # Удаление папки со всеми файлами
+    os.makedirs(directory)  # Создание пустой папки
 
 def is_app_running(driver, package_name):
     """Функция для проверки, запущено ли приложение на устройстве."""
@@ -257,6 +265,8 @@ perform_pinch_or_zoom(driver, action='pinch')
 world_image = './images/world.png'
 loot_images = ['./images/loot1.png', './images/loot2.png']
 advert_image = './images/advert.png'
+advert_close1_image = './images/advert_close1.png'
+advert_close2_image = './images/advert_close2.png'
 station_coin_image = './images/station_coin.png'
 close1_image = './images/close1.png'
 restart_image = './images/restart.png'
@@ -276,8 +286,12 @@ last_loot_time = time.time()
 last_advert_time = time.time()
 last_station_coin_time = time.time() - 1800
 
+# Создание папки для скриншотов, е сли её нет
 if not os.path.exists(screenshot_directory):
     os.makedirs(screenshot_directory)
+
+# Очистка папки со скриншотами при запуске
+clear_screenshot_directory(screenshot_directory)
 
 # Бесконечный цикл
 while True:
@@ -290,9 +304,14 @@ while True:
         last_loot_time = current_time
 
     # Проверка и нажатие на advert изображение каждые 1 минуту
-    #if current_time - last_advert_time >= advert_interval:
-    #    find_and_tap_image(driver, advert_image)
-    #    last_advert_time = current_time
+    if current_time - last_advert_time >= advert_interval:
+        result = find_and_tap_image(driver, advert_image)
+        if result:
+            time.sleep(35)
+            find_and_tap_image(driver, advert_close1_image)
+            time.sleep(10)
+            find_and_tap_image(driver, advert_close2_image)
+        last_advert_time = current_time
 
     # Проверка и нажатие на station_coin изображение каждые 30 минут
     if current_time - last_station_coin_time >= station_coin_interval:
