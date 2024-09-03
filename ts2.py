@@ -12,21 +12,21 @@ import threading
 
 # Настройки для подключения к Appium серверу и запуска приложения
 options = UiAutomator2Options()
-options.app_package = 'com.pixelfederation.ts2'
-options.app_activity = 'com.google.firebase.MessagingUnityPlayerActivity'
-options.device_name = 'device'
-options.no_reset = True
-options.full_reset = False
+options.app_package = 'com.pixelfederation.ts2'  # Уникальный идентификатор пакета приложения
+options.app_activity = 'com.google.firebase.MessagingUnityPlayerActivity'  # Основная активность приложения
+options.device_name = 'device'  # Имя устройства (если требуется)
+options.no_reset = True  # Сохраняет данные приложения между запусками
+options.full_reset = False  # Полный сброс приложения при запуске отключен
 
 def is_app_running(driver, package_name):
-    """Функция для проверки, запущено ли приложение."""
+    """Функция для проверки, запущено ли приложение на устройстве."""
     output = driver.execute_script("mobile: shell", {
         'command': f'pidof {package_name}',
         'args': [],
         'includeStderr': True,
         'timeout': 5000
     })
-    return bool(output.get('stdout', '').strip())
+    return bool(output.get('stdout', '').strip())  # Если PID найден, возвращается True, иначе False
 
 def start_app(driver, package_name, activity_name):
     """Функция для запуска приложения."""
@@ -36,12 +36,13 @@ def start_app(driver, package_name, activity_name):
     })
 
 def perform_pinch_or_zoom(driver, action='pinch'):
-    """Функция для выполнения масштабирования."""
-    window_size = driver.get_window_size()
+    """Функция для выполнения масштабирования экрана: уменьшение или увеличение."""
+    window_size = driver.get_window_size()  # Получение размеров экрана устройства
     center_x = window_size['width'] / 2
     center_y = window_size['height'] / 2
 
     if action == 'pinch':
+        # Уменьшение масштаба (pinch)
         driver.execute_script('mobile: pinchCloseGesture', {
             'elementId': None,
             'left': center_x - 100,
@@ -52,6 +53,7 @@ def perform_pinch_or_zoom(driver, action='pinch'):
             'speed': 200
         })
     elif action == 'zoom':
+        # Увеличение масштаба (zoom)
         driver.execute_script('mobile: pinchOpenGesture', {
             'elementId': None,
             'left': center_x - 100,
@@ -63,22 +65,25 @@ def perform_pinch_or_zoom(driver, action='pinch'):
         })
 
 def find_and_tap_image(driver, template_path, threshold=0.6, save_screenshot=True):
-    """Функция для поиска изображения на экране и клика по нему с сообщением об успехе или неудаче."""
-    screenshot = driver.get_screenshot_as_png()
-    screenshot = cv2.imdecode(np.frombuffer(screenshot, np.uint8), cv2.IMREAD_COLOR)
-    template = cv2.imread(template_path, cv2.IMREAD_COLOR)
+    """Функция для поиска изображения на экране и клика по нему, если оно найдено."""
+    screenshot = driver.get_screenshot_as_png()  # Получение скриншота экрана
+    screenshot = cv2.imdecode(np.frombuffer(screenshot, np.uint8), cv2.IMREAD_COLOR)  # Декодирование скриншота
+    template = cv2.imread(template_path, cv2.IMREAD_COLOR)  # Загрузка шаблона изображения
     
     if template is None:
         print("Ошибка: шаблон изображения не найден.")
         return False
 
+    # Сопоставление шаблона с текущим изображением экрана
     result = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
     min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
 
     if max_val >= threshold:
+        # Вычисление координат центра найденного шаблона
         tap_x = max_loc[0] + template.shape[1] // 2
         tap_y = max_loc[1] + template.shape[0] // 2
 
+        # Выполнение клика по найденным координатам
         finger = PointerInput('touch', "finger")
         actions = ActionBuilder(driver, mouse=finger)
         actions.pointer_action.move_to_location(tap_x, tap_y).pointer_down().pointer_up()
@@ -95,8 +100,7 @@ def find_and_tap_image(driver, template_path, threshold=0.6, save_screenshot=Tru
         return False
 
 def perform_action_and_check_close(driver, action_template, close_template, use_gray=True, use_motion=True):
-    """Функция выполняет действие и проверяет наличие изображения '{action_template}'."""
-    # Выполняем действие
+    """Функция выполняет действие по заданному шаблону и проверяет, появился ли элемент закрытия (close_template)."""
     if use_motion:
         action_successful = find_and_predict_tap_multiscale(driver, action_template, use_gray=use_gray)
     else:
@@ -107,18 +111,18 @@ def perform_action_and_check_close(driver, action_template, close_template, use_
         # Проверяем наличие close1.png и нажимаем на него, если он найден
         close_found = find_and_tap_image(driver, close_template, save_screenshot=False)
         if close_found:
-            print("Изображение '{action_template}' найдено и нажатие выполнено.")
+            print(f"Изображение '{action_template}' найдено и нажатие выполнено.")
             return True
         else:
-            print("Изображение '{action_template}' не найдено.")
+            print(f"Изображение '{close_template}' не найдено.")
             return False
     else:
-        print("Действие не выполнено, пропускаем проверку '{action_template}'.")
+        print(f"Действие '{action_template}' не выполнено, пропускаем проверку '{close_template}'.")
         return False
 
-# Функция для выполнения отложенных действий через 7 минут
 def perform_delayed_actions(driver, station_x, station_y, delay_time):
-    time.sleep(delay_time)  # Ожидание {delay_time}
+    """Функция для выполнения отложенных действий через заданное время."""
+    time.sleep(delay_time)  # Ожидание указанного времени (например, 7 минут)
 
     # Нажатие на station_coin.png по старым координатам
     finger = PointerInput('touch', "finger")
@@ -127,18 +131,20 @@ def perform_delayed_actions(driver, station_x, station_y, delay_time):
     actions.perform()
 
     # Нажатие на collect_all.png
-    find_and_predict_tap_multiscale(driver, './images/collect_all.png', use_gray=False)
+    find_and_predict_tap_multiscale(driver, collect_all_image, use_gray=False)
 
-    # Нажатие на close1.png после collect_all
-    find_and_predict_tap_multiscale(driver, './images/close1.png', use_gray=False)
+    # Нажатие на close1.png после collect_all.png
+    find_and_predict_tap_multiscale(driver, close1_image, use_gray=False)
 
 def take_screenshot(driver):
+    """Функция для получения скриншота и конвертации его в изображение OpenCV."""
     screenshot = driver.get_screenshot_as_png()
     image = np.frombuffer(screenshot, dtype=np.uint8)
     image = cv2.imdecode(image, cv2.IMREAD_COLOR)
     return image
 
 def find_and_predict_tap_multiscale(driver, template_path, use_gray=True, threshold=0.60, scales=[1.0, 0.9, 0.8]):
+    """Функция для поиска и предсказания нажатия на объект, с учетом возможного изменения его масштаба."""
     # Снимаем первый скриншот
     img1 = take_screenshot(driver)
     
@@ -200,12 +206,8 @@ def find_and_predict_tap_multiscale(driver, template_path, use_gray=True, thresh
     delta_y = max_loc2[1] - best_loc[1]
     
     # Вычисляем координаты предполагаемого местоположения объекта
-    #predicted_x = max_loc2[0] + best_match.shape[1] // 2
-    #predicted_y = max_loc2[1] + best_match.shape[0] // 2
-
     predicted_x = int(max_loc2[0] + delta_x + template_width * best_scale / 2) + 3 * (1 if delta_x > 0 else -1)
     predicted_y = int(max_loc2[1] + delta_y + template_height * best_scale / 2) + 3 * (1 if delta_y > 0 else -1)
-
 
     print(f"Тап по координатам ({predicted_x}, {predicted_y}).")
 
@@ -232,6 +234,7 @@ else:
     print("Приложение уже запущено, продолжаем работу.")
 
 def save_screenshot_with_marker(driver, tap_x, tap_y):
+    """Функция для сохранения скриншота с меткой нажатия."""
     global screenshot_counter
     screenshot_path = os.path.join(screenshot_directory, f"screenshot_{screenshot_counter % 10}.png")
     
@@ -257,6 +260,8 @@ advert_image = './images/advert.png'
 station_coin_image = './images/station_coin.png'
 close1_image = './images/close1.png'
 restart_image = './images/restart.png'
+collect_all_image = './images/collect_all.png'
+dispatch_all_image = './images/dispatch_all.png'
 
 screenshot_counter = 0
 screenshot_directory = "./screenshots" 
@@ -291,22 +296,20 @@ while True:
 
     # Проверка и нажатие на station_coin изображение каждые 30 минут
     if current_time - last_station_coin_time >= station_coin_interval:
-        found, station_x, station_y = find_and_predict_tap_multiscale(driver, './images/station_coin.png', use_gray=False)
+        found, station_x, station_y = find_and_predict_tap_multiscale(driver, station_coin_image, use_gray=False)
 
         if found:
             # Поиск и нажатие на dispatch_all.png внутри station_coin.png
-            result = find_and_predict_tap_multiscale(driver, './images/dispatch_all.png', use_gray=False)
+            result = find_and_predict_tap_multiscale(driver, dispatch_all_image, use_gray=False)
 
             # Нажатие на close1.png после dispatch_all
-            find_and_predict_tap_multiscale(driver, './images/close1.png', use_gray=False)
+            find_and_predict_tap_multiscale(driver, close1_image, use_gray=False)
 
             if result:
                 # Запуск отложенных действий через 7 минут в отдельном потоке
                 threading.Thread(target=perform_delayed_actions, args=(driver, station_x, station_y, 420)).start()
 
         last_station_coin_time = current_time
-
-
 
     # Проверка и нажатие на restart изображение если оно есть, значит есть второй вход - ждём 5 минут
     if find_and_tap_image(driver, restart_image):
