@@ -19,6 +19,14 @@ options.device_name = 'device'  # Имя устройства (если треб
 options.no_reset = True  # Сохраняет данные приложения между запусками
 options.full_reset = False  # Полный сброс приложения при запуске отключен
 
+
+# Функция закрытия рекламы
+def close_advert():
+    time.sleep(35)
+    find_and_tap_image(driver, advert_close1_image)
+    time.sleep(10)
+    find_and_tap_image(driver, advert_close2_image)
+
 # Функция для очистки папки со скриншотами
 def clear_screenshot_directory(directory):
     """Очищает папку со скриншотами при запуске скрипта."""
@@ -272,6 +280,7 @@ close1_image = './images/close1.png'
 restart_image = './images/restart.png'
 collect_all_image = './images/collect_all.png'
 dispatch_all_image = './images/dispatch_all.png'
+basket_image = './images/basket.png'
 
 screenshot_counter = 0
 screenshot_directory = "./screenshots" 
@@ -279,14 +288,16 @@ screenshot_directory = "./screenshots"
 # Время в секундах для интервалов
 loot_interval = 5  # 5 секунд
 advert_interval = 60  # 1 минута
+basket_interval = 1800 # 30 минут
 station_coin_interval = 1800  # 30 минут
 
 # Время последнего выполнения
 last_loot_time = time.time()
 last_advert_time = time.time()
+last_basket_time = time.time() - 1800
 last_station_coin_time = time.time() - 1800
 
-# Создание папки для скриншотов, е сли её нет
+# Создание папки для скриншотов, если её нет
 if not os.path.exists(screenshot_directory):
     os.makedirs(screenshot_directory)
 
@@ -307,11 +318,22 @@ while True:
     if current_time - last_advert_time >= advert_interval:
         result = find_and_tap_image(driver, advert_image)
         if result:
-            time.sleep(35)
-            find_and_tap_image(driver, advert_close1_image)
-            time.sleep(10)
-            find_and_tap_image(driver, advert_close2_image)
+            close_advert
         last_advert_time = current_time
+
+    # Проверка и нажатие на basket изображение каждые 30 минут
+    if current_time - last_basket_time >= basket_interval:
+        result = find_and_tap_image(driver, basket_image)
+        if result:
+            time.sleep(1)
+            # Тут должен быть сборк шестерёнок с корзины в том числе с рекламой
+            
+            # Закрытие окна с рекламой
+            #close_advert
+            
+            # Закрытие окна корзины
+            find_and_tap_image(driver, close1_image)
+        last_basket_time = current_time
 
     # Проверка и нажатие на station_coin изображение каждые 30 минут
     if current_time - last_station_coin_time >= station_coin_interval:
