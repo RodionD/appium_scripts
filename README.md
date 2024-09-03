@@ -4,9 +4,9 @@
 # ВНИМАНИЕ! На устройстве нужно включить редим разработчика и в нём включить "Отладка по USB".
 
 # 1.  Установка зависимостей:
-    ```
+    
     emerge dev-lang/python dev-util/android-studio dev-python/pip net-libs/nodejs dev-java/openjdk-bin
-    ```
+    
 
 # 2.  Установка компонентов Android Studio:
     ```
