@@ -80,24 +80,41 @@ def perform_pinch_or_zoom(driver, action='pinch'):
             'speed': 200
         })
 
-def find_and_tap_image(driver, template_path, threshold=0.6, save_screenshot=True):
-    """Функция для поиска изображения на экране и клика по нему, если оно найдено."""
-    screenshot = driver.get_screenshot_as_png()  # Получение скриншота экрана
-    screenshot = cv2.imdecode(np.frombuffer(screenshot, np.uint8), cv2.IMREAD_COLOR)  # Декодирование скриншота
-    template = cv2.imread(template_path, cv2.IMREAD_COLOR)  # Загрузка шаблона изображения
+def find_and_tap_image(driver, template_path, threshold=0.6, save_screenshot=True, offset_y=0, use_gray=False):
+    """
+    Функция для поиска изображения на экране и клика по нему с возможностью смещения нажатия вниз от центра.
     
+    :param driver: WebDriver instance
+    :param template_path: Путь к изображению шаблона
+    :param threshold: Порог совпадения для определения успешного поиска
+    :param save_screenshot: Сохранять ли скриншот с меткой при успешном клике
+    :param offset_y: Смещение вниз от центра найденного шаблона (в пикселях)
+    :return: True если изображение найдено и клик выполнен, иначе False
+    """
+    # Получение скриншота экрана
+    screenshot = driver.get_screenshot_as_png()
+    screenshot = cv2.imdecode(np.frombuffer(screenshot, np.uint8), cv2.IMREAD_COLOR)
+    
+    # Загрузка шаблона изображения
+    template = cv2.imread(template_path, cv2.IMREAD_COLOR)
+
     if template is None:
-        print("Ошибка: шаблон изображения не найден.")
-        return False
+        print(f"Ошибка: шаблон {template_path} изображения не найден.")
+        return False, None, None
+
+    if use_gray:
+        # Конвертируем изображения в черно-белые
+        screenshot = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+        template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
 
     # Сопоставление шаблона с текущим изображением экрана
     result = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
     min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
 
     if max_val >= threshold:
-        # Вычисление координат центра найденного шаблона
+        # Вычисление координат центра найденного шаблона с учетом смещения
         tap_x = max_loc[0] + template.shape[1] // 2
-        tap_y = max_loc[1] + template.shape[0] // 2
+        tap_y = max_loc[1] + template.shape[0] // 2 + offset_y
 
         # Выполнение клика по найденным координатам
         finger = PointerInput('touch', "finger")
@@ -107,33 +124,30 @@ def find_and_tap_image(driver, template_path, threshold=0.6, save_screenshot=Tru
 
         if save_screenshot:
             # Сохранение скриншота с меткой только при успешном нажатии
-            save_screenshot_with_marker(driver, tap_x, tap_y)    
+            save_screenshot_with_marker(driver, tap_x, tap_y)
 
-        print(f"Изображение '{template_path}' найдено с максимальным значением совпадения {max_val:.2f}. Выполнен клик по координатам ({tap_x}, {tap_y}).")
-        return True
+        print(f"Изображение '{template_path}' найдено с максимальным значением совпадения {max_val:.2f}. Выполнен клик по координатам ({tap_x}, {tap_y}) со смещением {offset_y} пикселей.")
+        return True, tap_x, tap_y
     else:
         print(f"Изображение '{template_path}' не найдено. Максимальное значение совпадения: {max_val:.2f}. Пороговое значение: {threshold}.")
-        return False
+        return False, None, None
 
 def perform_action_and_check_close(driver, action_template, close_template, use_gray=True, use_motion=True):
     """Функция выполняет действие по заданному шаблону и проверяет, появился ли элемент закрытия (close_template)."""
     if use_motion:
         action_successful = find_and_predict_tap_multiscale(driver, action_template, use_gray=use_gray)
     else:
-        action_successful = find_and_tap_image(driver, action_template)
+        action_successful = find_and_tap_image(driver, action_template, use_gray=use_gray)
     
     if action_successful:
         time.sleep(2)  # Небольшая пауза перед проверкой close1.png
         # Проверяем наличие close1.png и нажимаем на него, если он найден
         close_found = find_and_tap_image(driver, close_template, save_screenshot=False)
         if close_found:
-            print(f"Изображение '{action_template}' найдено и нажатие выполнено.")
             return True
         else:
-            print(f"Изображение '{close_template}' не найдено.")
             return False
     else:
-        print(f"Действие '{action_template}' не выполнено, пропускаем проверку '{close_template}'.")
         return False
 
 def perform_delayed_actions(driver, station_x, station_y, delay_time):
@@ -195,10 +209,10 @@ def find_and_predict_tap_multiscale(driver, template_path, use_gray=True, thresh
 
     # Проверяем, если лучший результат превышает порог
     if best_val < threshold:
-        print("Шаблон не найден.")
-        return False
+        print(f"Шаблон {template_path} не найден.")
+        return False, None, None
     
-    print(f"Шаблон найден с масштабом {best_scale} и уверенностью {best_val:.2f}.")
+    print(f"Шаблон {template_path} найден с масштабом {best_scale} и уверенностью {best_val:.2f}.")
     
     # Снимаем второй скриншот через небольшую задержку
     time.sleep(0.1)
@@ -212,8 +226,8 @@ def find_and_predict_tap_multiscale(driver, template_path, use_gray=True, thresh
     min_val2, max_val2, min_loc2, max_loc2 = cv2.minMaxLoc(res2)
     
     if max_val2 < threshold:
-        print("Шаблон не найден на втором изображении.")
-        return False
+        print(f"Шаблон {template_path} не найден на втором изображении.")
+        return False, None, None
     
     template_height, template_width = template.shape[:2]
     
@@ -238,17 +252,20 @@ def find_and_predict_tap_multiscale(driver, template_path, use_gray=True, thresh
 
     return True, predicted_x, predicted_y
 
-# Запуск сессии WebDriver
-driver = webdriver.Remote('http://127.0.0.1:4723', options=options)
-
-# Проверяем, запущено ли приложение
-if not is_app_running(driver, options.app_package):
-    print("Приложение не запущено, выполняется запуск.")
-    start_app(driver, options.app_package, options.app_activity)
-    time.sleep(30)  # Ожидаем запуска приложения
-else:
-    print("Приложение уже запущено, продолжаем работу.")
-
+def press_esc_key(driver):
+    """
+    Функция для нажатия физической клавиши Esc на устройстве.
+    
+    :param driver: WebDriver instance
+    """
+    driver.execute_script("mobile: shell", {
+        'command': 'input',
+        'args': ['keyevent', '111'],
+        'includeStderr': True,
+        'timeout': 5000
+    })
+    print("Нажата клавиша Esc.")
+    
 def save_screenshot_with_marker(driver, tap_x, tap_y):
     """Функция для сохранения скриншота с меткой нажатия."""
     global screenshot_counter
@@ -266,6 +283,17 @@ def save_screenshot_with_marker(driver, tap_x, tap_y):
     screenshot_counter += 1
     print(f"Скриншот с меткой сохранен: {screenshot_path}")
 
+# Запуск сессии WebDriver
+driver = webdriver.Remote('http://127.0.0.1:4723', options=options)
+
+# Проверяем, запущено ли приложение
+if not is_app_running(driver, options.app_package):
+    print("Приложение не запущено, выполняется запуск.")
+    start_app(driver, options.app_package, options.app_activity)
+    time.sleep(30)  # Ожидаем запуска приложения
+else:
+    print("Приложение уже запущено, продолжаем работу.")
+
 # Выполняем масштабирование (уменьшение масштаба)
 perform_pinch_or_zoom(driver, action='pinch')
 
@@ -281,21 +309,29 @@ restart_image = './images/restart.png'
 collect_all_image = './images/collect_all.png'
 dispatch_all_image = './images/dispatch_all.png'
 basket_image = './images/basket.png'
+basket_free_image = './images/basket_free.png'
+basket_advert_image = './images/basket_advert.png'
+start_free_gear_image = './images/start_free_gear.png'
+start_advert_gear_image = './images/start_advert_gear.png'
+collect_free_gear_image = './images/collect_free_gear.png'
+station_image = './images/station.png'
 
 screenshot_counter = 0
 screenshot_directory = "./screenshots" 
 
 # Время в секундах для интервалов
 loot_interval = 5  # 5 секунд
-advert_interval = 60  # 1 минута
+advert_interval = 5  # 30 секунд
 basket_interval = 1800 # 30 минут
 station_coin_interval = 1800  # 30 минут
+restart_interval = 30 # 30 секунд
 
 # Время последнего выполнения
 last_loot_time = time.time()
 last_advert_time = time.time()
-last_basket_time = time.time() - 1800
-last_station_coin_time = time.time() - 1800
+last_basket_time = time.time() - 900 # Запуск первой проверки через 15 минут после запуска скрипта
+last_station_coin_time = time.time() - 1800 # Запуск первой проверки сразу после запуска скрипта
+last_restart = time.time()
 
 # Создание папки для скриншотов, если её нет
 if not os.path.exists(screenshot_directory):
@@ -303,6 +339,12 @@ if not os.path.exists(screenshot_directory):
 
 # Очистка папки со скриншотами при запуске
 clear_screenshot_directory(screenshot_directory)
+
+# Возвращаемся на станцию, если накуролесили руками
+find_and_tap_image(driver, close1_image)
+find_and_tap_image(driver, station_image)
+find_and_tap_image(driver, close1_image)
+find_and_tap_image(driver, station_image)
 
 # Бесконечный цикл
 while True:
@@ -314,7 +356,7 @@ while True:
             perform_action_and_check_close(driver, loot_image, use_gray=False, use_motion=True, close_template=close1_image)
         last_loot_time = current_time
 
-    # Проверка и нажатие на advert изображение каждые 1 минуту
+    # Проверка и нажатие на advert изображение каждые 5 секунд
     if current_time - last_advert_time >= advert_interval:
         result = find_and_tap_image(driver, advert_image)
         if result:
@@ -326,25 +368,51 @@ while True:
         result = find_and_tap_image(driver, basket_image)
         if result:
             time.sleep(1)
-            # Тут должен быть сборк шестерёнок с корзины в том числе с рекламой
-            
-            # Закрытие окна с рекламой
-            #close_advert
-            
+            # Тут должен быть сборка шестерёнок с корзины в том числе с рекламой
+            # Нажатие на кнопку сбора безрекламных шестерёнок
+            result = find_and_tap_image(driver, basket_free_image, offset_y=160, threshold=0.85)
+            if result:
+                # Нажатие на кнопку сбора безрекламных шестерёнок
+                result = find_and_tap_image(driver, start_free_gear_image, offset_y=200)
+                if result:
+                    time.sleep(1)
+                    # Нажатие на кнопку старта писка безрекламных шестерёнок
+                    result = find_and_tap_image(driver, start_free_gear_image)
+                    if result:
+                        time.sleep(6)
+                        # Нажатие на кнопку сбора шестерёнок
+                        find_and_tap_image(driver, collect_free_gear_image)
+                        time.sleep(1)
+                        find_and_tap_image(driver, close1_image)
+
+            # Нажатие на кнопку сбора рекламных шестерёнок
+            result = find_and_tap_image(driver, basket_advert_image, offset_y=160, threshold=0.85)
+            if result:
+                # Нажатие на кнопку сбора рекламных шестерёнок
+                result = find_and_tap_image(driver, start_advert_gear_image, offset_y=200)
+                if result:
+                    close_advert
+                    # Нажатие на кнопку старта писка рекламных шестерёнок
+                    result = find_and_tap_image(driver, start_free_gear_image)
+                    if result:
+                        # Нажатие на кнопку сбора шестерёнок
+                        find_and_tap_image(driver, collect_free_gear_image)
+                        time.sleep(1)
+                        find_and_tap_image(driver, close1_image)
             # Закрытие окна корзины
             find_and_tap_image(driver, close1_image)
-        last_basket_time = current_time
+            last_basket_time = current_time
 
     # Проверка и нажатие на station_coin изображение каждые 30 минут
     if current_time - last_station_coin_time >= station_coin_interval:
-        found, station_x, station_y = find_and_predict_tap_multiscale(driver, station_coin_image, use_gray=False)
+        found, station_x, station_y = find_and_tap_image(driver, station_coin_image, use_gray=False, threshold=0.75)
 
         if found:
             # Поиск и нажатие на dispatch_all.png внутри station_coin.png
-            result = find_and_predict_tap_multiscale(driver, dispatch_all_image, use_gray=False)
+            result = find_and_tap_image(driver, dispatch_all_image, use_gray=False)
 
             # Нажатие на close1.png после dispatch_all
-            find_and_predict_tap_multiscale(driver, close1_image, use_gray=False)
+            find_and_tap_image(driver, close1_image, use_gray=False)
 
             if result:
                 # Запуск отложенных действий через 7 минут в отдельном потоке
@@ -352,10 +420,12 @@ while True:
 
         last_station_coin_time = current_time
 
-    # Проверка и нажатие на restart изображение если оно есть, значит есть второй вход - ждём 5 минут
-    if find_and_tap_image(driver, restart_image):
-        print("Есть второй вход - ждём 5 минут.")
-        time.sleep(299)
+    # Проверка на запуск второй копии игры каждые 30 секунд
+    if current_time - last_restart >= restart_interval:
+        # Проверка и нажатие на restart изображение если оно есть, значит есть второй вход - ждём 5 минут
+        if find_and_tap_image(driver, restart_image):
+            print("Есть второй вход - ждём 5 минут.")
+            time.sleep(299)
 
     # Задержка перед следующей итерацией
     time.sleep(1)
