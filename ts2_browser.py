@@ -32,6 +32,7 @@ station_image = f'{images_path}station.png'
 build_shop_image = f'{images_path}build_shop.png'
 failed_ads_image = f'{images_path}failed_ads.png'
 close_failed_ads_image = f'{images_path}close_failed_ads.png'
+store_image = f'{images_path}store.png'
 #endregion
 
 #region Обявление переменных
@@ -103,7 +104,6 @@ def save_screenshot_with_marker(screenshot_array, x, y, directory=screenshot_dir
 
     # Сохраняем вырезанный скриншот с меткой
     cv2.imwrite(screenshot_filename, cropped_screenshot)
-    print(f"Скриншот сохранён: {screenshot_filename}")
 
     # Увеличиваем счетчик
     screenshot_counter += 1
@@ -122,7 +122,6 @@ def get_screenshot(page):
 
         return screenshot_image
     except Exception as e:
-        print(f"Не удалось получить скриншот без мерцания: {e}")
         return None
 #endregion
 
@@ -190,12 +189,9 @@ def switch_to_tab(context, tab_title):
 #endregion
 
 #region Функция для эмуляции нажатия клавиши Esc в фрейме
-def press_escape(frame):
-    try:
-        # Эмулируем нажатие клавиши Esc
-        frame.keyboard.press("Escape")
-    except Exception as e:
-        print(f"Ошибка при нажатии клавиши Escape: {e}")
+def press_escape(page):
+    # Эмулируем нажатие клавиши Esc
+    page.keyboard.press("Escape")
 #endregion
 
 #region Функция для прокрутки колесом мыши внутри фрейма
@@ -234,7 +230,6 @@ def find_template(page, template_image, best_scale, threshold=0.8, mark_center=F
 
     if found:
         x, y = location
-        print(f"Шаблон найден в координатах ({x}, {y}) с использованием масштаба {best_scale}.")
         return True, location, marked_screenshot
     else:
         return False, None, None
@@ -246,8 +241,6 @@ def click_by_pos(page, x, y):
 
     page.mouse.move(x, y)
     page.mouse.click(x, y)
-
-    print(f"Клик по статическому объекту в координатах ({x}, {y}).")
 #endregion
 
 #region Функция для клика по статическому объекту с использованием найденного масштаба
@@ -267,7 +260,6 @@ def click_static_template(page, template_image, best_scale, threshold=0.8, delay
         # Сохраняем скриншот с меткой
         save_screenshot_with_marker(marked_screenshot, x, y, screenshot_directory)
 
-        print(f"Клик по статическому объекту в координатах ({x}, {y}) с использованием масштаба {best_scale}.")
         return True, x, y
     else:
         return False, None, None
@@ -343,8 +335,6 @@ def click_moving_template(page, template_image, best_scale, threshold=0.8, searc
     roi_left = max(0, x1 - search_radius)
     roi_right = min(width, x1 + search_radius)
 
-    print(f"Область интереса для второго скриншота: ({roi_left}, {roi_top}) - ({roi_right}, {roi_bottom})")
-
     # Второй скриншот
     time.sleep(0.1)  # Короткая пауза для фиксации движения
     screenshot_array2 = get_screenshot(page)
@@ -382,8 +372,6 @@ def click_moving_template(page, template_image, best_scale, threshold=0.8, searc
     page.mouse.move(adjusted_x, adjusted_y)
     page.mouse.click(adjusted_x, adjusted_y)
 
-    print(f"Клик по движущемуся объекту в предполагаемых координатах ({adjusted_x}, {adjusted_y}) с использованием масштаба {best_scale}.")
-
     # Сохранение скриншота с маркерами при необходимости
     if save_screenshot:
         # Используем функцию save_screenshot_with_marker для сохранения скриншота с отметками
@@ -403,21 +391,15 @@ def click_and_hold(page, x, y, hold_time=0.2):
     :param y: Координата Y для клика
     :param hold_time: Время удержания клика в секундах
     """
-    try:
-        # Перемещаем мышь на координаты объекта
-        page.mouse.move(x, y)
-        
-        # Нажимаем и удерживаем кнопку
-        page.mouse.down()
-        time.sleep(hold_time)  # Удерживаем нажатие в течение заданного времени
+    # Перемещаем мышь на координаты объекта
+    page.mouse.move(x, y)
+    
+    # Нажимаем и удерживаем кнопку
+    page.mouse.down()
+    time.sleep(hold_time)  # Удерживаем нажатие в течение заданного времени
 
-        # Отпускаем кнопку
-        page.mouse.up()
-
-        print(f"Клик с зажатием по координатам ({x}, {y}) удерживался {hold_time} секунд.")
-
-    except Exception as e:
-        print(f"Ошибка при выполнении клика с зажатием: {e}")
+    # Отпускаем кнопку
+    page.mouse.up()
 #endregion
 
 #region Функция для отслеживания объекта с помощью Optical Flow
@@ -448,7 +430,6 @@ def track_object_with_optical_flow(page, template_path, best_scale, threshold=0.
         if status[0][0] == 1:
             new_position = next_points[0][0]
             x, y = float(new_position[0]), float(new_position[1])
-            print(f"Шаблон переместился на: ({x:.2f}, {y:.2f})")
 
             # Перемещаем мышь и кликаем по новому положению
             click_and_hold(page, x, y)
@@ -489,11 +470,7 @@ def close_advert(page, best_scale):
 
 #region Перезагрузка страницы
 def reload_page(page):
-    try:
-        page.reload()
-        print("Страница успешно перезагружена.")
-    except Exception as e:
-        print(f"Ошибка при перезагрузке страницы: {e}")
+    page.reload()
 #endregion
 
 #region Сбор монеток на станции
@@ -502,6 +479,29 @@ def collect_coins(page, x, y, best_scale):
     time.sleep(0.5)
     click_static_template(page, collect_all_image, best_scale, threshold=0.85)
     press_escape(page)
+#endregion
+
+#region Функция для анализа изменений в области с помощью шаблона
+def analyze_area_change(page, area_coords, original_image, threshold=0.8):
+    screenshot_array = get_screenshot(page)
+    if screenshot_array is None:
+        print("Ошибка: скриншот не найден.")
+        return False
+
+    # Извлекаем область для анализа
+    left, top, right, bottom = area_coords
+    current_area = screenshot_array[top:bottom, left:right]
+
+    # Сравниваем текущую область с оригинальным изображением
+    res = cv2.matchTemplate(current_area, original_image, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, _ = cv2.minMaxLoc(res)
+
+    if max_val < threshold:
+        print("Изменение обнаружено в указанной области.")
+        return True
+    else:
+        print("Изменений в указанной области не обнаружено.")
+        return False
 #endregion
 
 #region Логика скрипта
@@ -528,13 +528,34 @@ with sync_playwright() as p:
 
     # Бесконечный цикл
     while True:
-        
+
+        # Шаг 1: Поиск области с шаблоном store.png
+        found, store_location, screenshot = find_template(page, store_image, best_scale, threshold=0.8)
+        if not found:
+            print("Область с шаблоном store.png не найдена, пропускаем итерацию.")
+            continue
+        # Определяем координаты области
+        store_x, store_y = store_location
+        store_width, store_height = 100, 100  # Примерные размеры области для анализа
+        store_coords = (store_x, store_y, store_x + store_width, store_y + store_height)
+
         current_time = time.time()
         #'''
         # Проверка и нажатие на loot изображения каждые 5 секунд
         if current_time - last_loot_time >= loot_interval:
             for loot_image in loot_images:
-                track_object_with_optical_flow(page, loot_image, best_scale, threshold=0.6, tracking_duration=10)
+                result = track_object_with_optical_flow(page, loot_image, best_scale, threshold=0.6, tracking_duration=10)
+                if result:
+                    # Ожидание 0.5 секунд
+                    time.sleep(0.1)
+                    # Шаг 3: Сравнение с предыдущим состоянием в указанной области
+                    # Загружаем оригинальный скриншот статичной области для сравнения
+                    original_image = get_screenshot(page)[store_y:store_y+store_height, store_x:store_x+store_width]
+
+                    if analyze_area_change(page, store_coords, original_image, threshold=0.8):
+                        print("Изменение подтверждено после нажатия.")
+                    else:
+                        print("Изменений после нажатия не произошло.")                
             last_loot_time = current_time
 
         # Проверка и нажатие на advert изображение каждые 5 секунд
@@ -589,8 +610,7 @@ with sync_playwright() as p:
             print('Пришло время проверить корзину')
             result = click_static_template(page, basket_image, best_scale)
             if result:
-                time.sleep(1)
-                # Тут должен быть сборка шестерёнок с корзины в том числе с рекламой
+                time.sleep(0.5)
                 # Нажатие на кнопку сбора безрекламных шестерёнок
                 result = click_static_template(page, basket_free_image, best_scale, offset_y=160, threshold=0.85)
                 if result:
@@ -598,9 +618,8 @@ with sync_playwright() as p:
                     result = click_static_template(page, start_free_gear_image, best_scale, offset_y=160)
                     if result:
                         time.sleep(5)
-                        # Нажатие на кнопку сбора шестерёнок
-                        click_static_template(page, collect_gear_image, best_scale)
-                        time.sleep(3)
+                        press_escape(page)
+                        time.sleep(1)
                     press_escape(page)
                 # Нажатие на кнопку сбора рекламных шестерёнок
                 result = click_static_template(page, basket_advert_image, best_scale, offset_y=160)
@@ -610,10 +629,7 @@ with sync_playwright() as p:
                     if result:
                         time.sleep(2)
                         close_advert(page, best_scale)
-                        # Нажатие на кнопку сбора шестерёнок
-                        click_static_template(page, collect_gear_image, best_scale)
                         time.sleep(3)
-                        press_escape(page)
                 # Закрытие окна корзины
                 press_escape(page)
                 last_basket_time = current_time
