@@ -186,29 +186,6 @@ def switch_to_tab(context, tab_title):
     return None
 #endregion
 
-#region Функция для выполнения скролла в пределах фрейма (эмуляция движения мыши)
-def perform_mouse_scroll(frame, distance_percentage=0.07):
-    # Определяем размер видимой области фрейма
-    viewport_size = frame.viewport_size
-    if not viewport_size:
-        viewport_size = frame.evaluate("() => ({ width: window.innerWidth, height: window.innerHeight })")
-    
-    center_x = viewport_size['width'] // 2
-    center_y = viewport_size['height'] // 2
-
-    scroll_distance = int(viewport_size['height'] * distance_percentage)
-
-    try:
-        # Эмулируем зажатие левой кнопки мыши и перемещение вниз на 7% от высоты видимой области
-        frame.mouse.move(center_x, center_y)  # Перемещаем курсор в центр фрейма
-        frame.mouse.down()  # Зажимаем левую кнопку мыши
-        frame.mouse.move(center_x, center_y + scroll_distance, steps=10)  # Перемещаем мышь вниз
-        frame.mouse.up()  # Отпускаем левую кнопку мыши
-        print(f"Скроллинг в фрейме выполнен на {scroll_distance} пикселей.")
-    except Exception as e:
-        print(f"Ошибка при выполнении скролла в фрейме: {e}")
-#endregion
-
 #region Функция для эмуляции нажатия клавиши Esc в фрейме
 def press_escape(frame):
     try:
@@ -467,8 +444,8 @@ with sync_playwright() as p:
         page.goto("https://portal.pixelfederation.com/en/trainstation2")
     
     # Выполняем скроллинг в пределах фрейма на 7% видимого окна
-    #perform_mouse_scroll_in_frame(page, distance_percentage=0.11)
-    
+    #scroll_wheel(page, delta_y=300, steps=3)
+
     # Прокрутка колесом вниз (например, для уменьшения масштаба) внутри фрейма
     #scroll_wheel_in_main_frame(page, delta_y=300, steps=3)
 
@@ -503,7 +480,7 @@ with sync_playwright() as p:
                     time.sleep(299)
                     reload_page(page)
                     time.sleep(120)
-                    perform_mouse_scroll(page, distance_percentage=0.11)
+                    #perform_mouse_scroll(page, distance_percentage=0.11)
                     scroll_wheel(page, delta_y=300, steps=3)
 
             last_restart_time = current_time
