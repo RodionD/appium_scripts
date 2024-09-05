@@ -60,6 +60,7 @@ last_basket_time = time.time() - 1800 # Запуск первой проверк
 last_station_coin_time = time.time() - 1800 # Запуск первой проверки сразу после запуска скрипта
 last_station_collect_coin_time = time.time()
 last_restart = time.time()
+station_pos = [0,0]
 #endregion
 
 #region Функция для очистки папки со скриншотами
@@ -548,6 +549,7 @@ def close_advert(page, best_scale, delay=0):
         time.sleep(20)
         click_static_template(page, close_failed_ads_image, best_scale=best_scale, save_screenshot=False)
         time.sleep(5)
+        print('Посмотрели рекламку')
     press_escape(page)
     time.sleep(delay)
 #endregion
@@ -555,6 +557,9 @@ def close_advert(page, best_scale, delay=0):
 #region Перезагрузка страницы
 def reload_page(page):
     page.reload()
+    time.sleep(90)
+    perform_mouse_scroll(page, distance_percentage_x=-0.12, distance_percentage_y=0.1)
+    scroll_wheel(page, delta_y=300, steps=3)
 #endregion
 
 #region Сбор монеток на станции
@@ -742,6 +747,8 @@ with sync_playwright() as p:
     # Бесконечный цикл
     while True:
 
+        close_advert(page,best_scale)
+        click_static_template(page, station_image, best_scale, save_screenshot=False)
         found, store_location, screenshot = find_template(page, store_image, best_scale, threshold=0.7)
         if not found:
             print("Область с шаблоном store.png не найдена, пропускаем итерацию.")
@@ -775,20 +782,17 @@ with sync_playwright() as p:
                     print("Есть второй вход - ждём 5 минут.")
                     time.sleep(299)
                     reload_page(page)
-                    time.sleep(120)
-                    #perform_mouse_scroll(page, distance_percentage=0.11)
-                    scroll_wheel(page, delta_y=300, steps=3)
 
             last_restart_time = current_time
 
-        '''
+        #'''
         # Проверка и нажатие на station_coin изображение каждые 30 минут
         if current_time - last_station_coin_time >= station_coin_interval:
             print('Пришло время проверить станцию')
             found, station_x, station_y = click_static_template(page, station_coin_image, best_scale, threshold=0.85)
 
-            found = True
             if found:
+                station_pos = station_x, station_y
                 time.sleep(0.5)
                 # Поиск и нажатие на dispatch_all.png внутри station_coin.png
                 result, x, y = click_static_template(page, dispatch_all_image, best_scale)
@@ -805,10 +809,11 @@ with sync_playwright() as p:
         if station_collect_coin_interval > -1:
             if current_time - last_station_coin_time >= station_collect_coin_interval:
                 print('Пришло время собрать монетки')
+                station_x, station_y = station_pos
                 collect_coins(page, station_x, station_y, best_scale)
                 last_station_collect_coin_time = current_time
                 station_collect_coin_interval = -1
-        '''
+        #'''
 
         # Проверка и нажатие на basket изображение каждые 30 минут
         if current_time - last_basket_time >= basket_interval:
@@ -825,7 +830,6 @@ with sync_playwright() as p:
                         time.sleep(5)
                         press_escape(page)
                         time.sleep(1)
-                    press_escape(page)
                 # Нажатие на кнопку сбора рекламных шестерёнок
                 result = click_static_template(page, basket_advert_image, best_scale, offset_y=160, save_screenshot=False)
                 if result:
