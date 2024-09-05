@@ -1,3 +1,4 @@
+#region Imports
 import playwright
 from playwright.sync_api import sync_playwright
 import time
@@ -7,6 +8,7 @@ import os
 import threading
 import shutil
 import random
+#endregion
 
 #region Путь к изображениям
 images_path = './images/'
@@ -25,7 +27,7 @@ basket_free_image = f'{images_path}basket_free.png'
 basket_advert_image = f'{images_path}basket_advert.png'
 start_free_gear_image = f'{images_path}start_free_gear.png'
 start_advert_gear_image = f'{images_path}start_advert_gear.png'
-collect_free_gear_image = f'{images_path}collect_free_gear.png'
+collect_gear_image = f'{images_path}collect_gear.png'
 station_image = f'{images_path}station.png'
 build_shop_image = f'{images_path}build_shop.png'
 failed_ads_image = f'{images_path}failed_ads.png'
@@ -44,12 +46,14 @@ advert_interval = 5  # 30 секунд
 basket_interval = 1800 # 30 минут
 station_coin_interval = 1800  # 30 минут
 restart_interval = 30 # 30 секунд
+station_collect_coin_interval = -1
 
 # Время последнего выполнения
 last_loot_time = time.time()
 last_advert_time = time.time()
-last_basket_time = time.time() - 900 # Запуск первой проверки через 15 минут после запуска скрипта
+last_basket_time = time.time() - 1800 # Запуск первой проверки через 15 минут после запуска скрипта
 last_station_coin_time = time.time() - 1800 # Запуск первой проверки сразу после запуска скрипта
+last_station_collect_coin_time = time.time()
 last_restart = time.time()
 #endregion
 
@@ -251,10 +255,9 @@ def find_template(page, template_image, best_scale, threshold=0.8):
 
     if found:
         x, y = location
-        print(f"Шаблон не найден в координатах ({x}, {y}) с использованием масштаба {best_scale}.")
+        print(f"Шаблон найден в координатах ({x}, {y}) с использованием масштаба {best_scale}.")
         return True, location, marked_screenshot
     else:
-        print(f"Шаблон не найден на статическом объекте с масштабом {best_scale}.")
         return False, None, None
 #endregion
 
@@ -269,7 +272,7 @@ def click_by_pos(page, x, y):
 #endregion
 
 #region Функция для клика по статическому объекту с использованием найденного масштаба
-def click_static_template(page, template_image, best_scale, threshold=0.8, delay_time=0):
+def click_static_template(page, template_image, best_scale, threshold=0.8, delay_time=0, offset_x=0, offset_y=0):
     """Функция клика по статическому объекту с сохранением скриншота с меткой."""
 
     time.sleep(delay_time)
@@ -277,6 +280,8 @@ def click_static_template(page, template_image, best_scale, threshold=0.8, delay
 
     if found:
         x, y = location
+        x += offset_x
+        y += offset_y
         page.mouse.move(x, y)
         page.mouse.click(x, y)
 
@@ -423,10 +428,9 @@ clear_screenshot_directory(screenshot_directory)
 def close_advert(page, best_scale):
     no_ads = click_static_template(page, failed_ads_image, best_scale=best_scale)
     if no_ads[0]:
-        time.sleep(30)
+        time.sleep(20)
         click_static_template(page, close_failed_ads_image, best_scale=best_scale)
-        time.sleep(1)
-        press_escape(page)
+        time.sleep(5)
     else:
         time.sleep(30)
         press_escape(page)
@@ -441,11 +445,12 @@ def reload_page(page):
         print(f"Ошибка при перезагрузке страницы: {e}")
 #endregion
 
-#region Перезагрузка страницы
-def collect_coins(page, x, y, delay_time=0):
-    time.sleep(delay_time)
+#region Сбор монеток на станции
+def collect_coins(page, x, y, best_scale):
     click_by_pos(page,x,y)
-
+    time.sleep(0.5)
+    click_static_template(page, collect_all_image, best_scale, threshold=0.85)
+    press_escape(page)
 #endregion
 
 #region Логика скрипта
@@ -482,9 +487,10 @@ with sync_playwright() as p:
 
         # Проверка и нажатие на advert изображение каждые 5 секунд
         if current_time - last_advert_time >= advert_interval:
-            result = click_moving_template(page, advert_image, best_scale, threshold=0.6)
+            result = click_moving_template(page, advert_image, best_scale, threshold=0.6, save_screenshot=True)
             if result:
                 close_advert(page, best_scale)
+
             last_advert_time = current_time
 
         # Проверка на запуск второй копии игры каждые 30 секунд
@@ -500,20 +506,64 @@ with sync_playwright() as p:
                     perform_mouse_scroll(page, distance_percentage=0.11)
                     scroll_wheel(page, delta_y=300, steps=3)
 
+            last_restart_time = current_time
+
         # Проверка и нажатие на station_coin изображение каждые 30 минут
         if current_time - last_station_coin_time >= station_coin_interval:
-            found, station_x, station_y = click_static_template(page, station_coin_image, best_scale)
+            found, station_x, station_y = click_static_template(page, station_coin_image, best_scale, threshold=0.85)
 
+            found = True
             if found:
+                time.sleep(0.5)
                 # Поиск и нажатие на dispatch_all.png внутри station_coin.png
-                result = click_static_template(page, dispatch_all_image, best_scale)
-
-                if result[0]:
+                result, x, y = click_static_template(page, dispatch_all_image, best_scale)
+                if result:
+                    # Выходим со станции и запускаем таймер ожидания
                     press_escape(page)
-                    # Запуск отложенных действий через 7 минут в отдельном потоке
-                    threading.Thread(target=collect_coins, args=(page, station_x, station_y, 420)).start()
-            
-                last_station_coin_time = current_time
+                    last_station_collect_coin_time = current_time
+                    # Включаем отсчёт на 7 минут до сбора монеток
+                    station_collect_coin_interval = 420
+
+            last_station_coin_time = current_time
+
+        # Сбор золотых монеток после отправки и ожидания 7 минут
+        if station_collect_coin_interval > -1:
+            if current_time - last_station_coin_time >= station_collect_coin_interval:
+                collect_coins(page, station_x, station_y, best_scale)
+                last_station_collect_coin_time = -1
+
+        # Проверка и нажатие на basket изображение каждые 30 минут
+        if current_time - last_basket_time >= basket_interval:
+            result = click_static_template(page, basket_image, best_scale)
+            if result:
+                time.sleep(1)
+                # Тут должен быть сборка шестерёнок с корзины в том числе с рекламой
+                # Нажатие на кнопку сбора безрекламных шестерёнок
+                result = click_static_template(page, basket_free_image, best_scale, offset_y=160, threshold=0.85)
+                if result:
+                    # Нажатие на кнопку сбора безрекламных шестерёнок
+                    result = click_static_template(page, start_free_gear_image, best_scale, offset_y=160)
+                    if result:
+                        time.sleep(5)
+                        # Нажатие на кнопку сбора шестерёнок
+                        click_static_template(page, collect_gear_image, best_scale)
+                        time.sleep(3)
+                    press_escape(page)
+                # Нажатие на кнопку сбора рекламных шестерёнок
+                result = click_static_template(page, basket_advert_image, best_scale, offset_y=160)
+                if result:
+                    # Нажатие на кнопку сбора рекламных шестерёнок
+                    result = click_static_template(page, start_advert_gear_image, best_scale, offset_y=160)
+                    if result:
+                        time.sleep(2)
+                        close_advert(page, best_scale)
+                        # Нажатие на кнопку сбора шестерёнок
+                        click_static_template(page, collect_gear_image, best_scale)
+                        time.sleep(3)
+                        press_escape(page)
+                # Закрытие окна корзины
+                press_escape(page)
+                last_basket_time = current_time
 
         # Задержка перед следующей итерацией
         time.sleep(1)
