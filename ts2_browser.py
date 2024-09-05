@@ -79,6 +79,9 @@ def save_screenshot_with_marker(screenshot_array, x, y, directory=screenshot_dir
     """
     global screenshot_counter
 
+    # Приведение координат к целым числам
+    x, y = int(x), int(y)
+
     # Имя файла с использованием счетчика (от 0 до MAX_SCREENSHOTS-1)
     screenshot_filename = f"{directory}/{prefix}_{screenshot_counter % MAX_SCREENSHOTS}.png"
 
@@ -191,7 +194,6 @@ def press_escape(frame):
     try:
         # Эмулируем нажатие клавиши Esc
         frame.keyboard.press("Escape")
-        print("Клавиша Escape нажата.")
     except Exception as e:
         print(f"Ошибка при нажатии клавиши Escape: {e}")
 #endregion
@@ -220,7 +222,7 @@ def scroll_wheel(frame, delta_y, steps=10):
 #endregion
 
 #region Функция поиска статического объекта
-def find_template(page, template_image, best_scale, threshold=0.8):
+def find_template(page, template_image, best_scale, threshold=0.8, mark_center=False):
     """Функция поиска статического объекта."""
     
     screenshot_array = get_screenshot(page)
@@ -228,7 +230,7 @@ def find_template(page, template_image, best_scale, threshold=0.8):
         print("Ошибка: скриншот не найден.")
         return False, None, None
 
-    found, location, marked_screenshot = find_template_in_image(screenshot_array, template_image, best_scale, threshold=threshold, mark_center=True)
+    found, location, marked_screenshot = find_template_in_image(screenshot_array, template_image, best_scale, threshold=threshold, mark_center=mark_center)
 
     if found:
         x, y = location
@@ -392,6 +394,78 @@ def click_moving_template(page, template_image, best_scale, threshold=0.8, searc
     return True
 #endregion
 
+#region Функция нажатия на координаты с зажатием
+def click_and_hold(page, x, y, hold_time=0.2):
+    """
+    Функция для клика с зажатием на малое время.
+    
+    :param page: Страница, на которой выполняется клик
+    :param x: Координата X для клика
+    :param y: Координата Y для клика
+    :param hold_time: Время удержания клика в секундах
+    """
+    try:
+        # Перемещаем мышь на координаты объекта
+        page.mouse.move(x, y)
+        
+        # Нажимаем и удерживаем кнопку
+        page.mouse.down()
+        time.sleep(hold_time)  # Удерживаем нажатие в течение заданного времени
+
+        # Отпускаем кнопку
+        page.mouse.up()
+
+        print(f"Клик с зажатием по координатам ({x}, {y}) удерживался {hold_time} секунд.")
+
+    except Exception as e:
+        print(f"Ошибка при выполнении клика с зажатием: {e}")
+#endregion
+
+#region Функция для отслеживания объекта с помощью Optical Flow
+def track_object_with_optical_flow(page, template_path, best_scale, threshold=0.6, tracking_duration=10):
+    start_time = time.time()
+
+    # Первоначальный поиск объекта
+    found, first_position, first_screenshot = find_template(page, template_path, best_scale, threshold, mark_center=False)
+
+    if not found:
+        print(f"Шаблон {template_path} не найден.")
+        return False
+
+    # Преобразуем изображение в черно-белое для использования Optical Flow
+    prev_gray = cv2.cvtColor(first_screenshot, cv2.COLOR_BGR2GRAY)
+    prev_points = np.array([[first_position]], dtype=np.float32)
+
+    lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+    while time.time() - start_time < tracking_duration:
+        # Получаем текущий кадр (снимок экрана)
+        screenshot = get_screenshot(page)
+        current_gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+
+        # Используем Optical Flow для отслеживания положения объекта
+        next_points, status, error = cv2.calcOpticalFlowPyrLK(prev_gray, current_gray, prev_points, None, **lk_params)
+
+        if status[0][0] == 1:
+            new_position = next_points[0][0]
+            x, y = float(new_position[0]), float(new_position[1])
+            print(f"Шаблон переместился на: ({x:.2f}, {y:.2f})")
+
+            # Перемещаем мышь и кликаем по новому положению
+            click_and_hold(page, x, y)
+
+            # Сохраняем скриншот с меткой места нажатия
+            save_screenshot_with_marker(screenshot, x, y, screenshot_directory)
+            press_escape(page)
+            
+            # Обновляем предыдущий кадр и точки для следующей итерации
+            prev_gray = current_gray.copy()
+            prev_points = next_points
+
+        time.sleep(0.2)
+    return True
+#endregion
+
 #region Стартовые приготовления
 # Создание папки для скриншотов, если её нет
 if not os.path.exists(screenshot_directory):
@@ -454,17 +528,20 @@ with sync_playwright() as p:
 
     # Бесконечный цикл
     while True:
+        
         current_time = time.time()
-
+        #'''
         # Проверка и нажатие на loot изображения каждые 5 секунд
         if current_time - last_loot_time >= loot_interval:
             for loot_image in loot_images:
-                click_moving_template(page, loot_image, best_scale, threshold=0.6)
+                #click_moving_template(page, loot_image, best_scale, threshold=0.6)
+                track_object_with_optical_flow(page, loot_image, best_scale, threshold=0.6, tracking_duration=10)
             last_loot_time = current_time
 
         # Проверка и нажатие на advert изображение каждые 5 секунд
         if current_time - last_advert_time >= advert_interval:
-            result = click_moving_template(page, advert_image, best_scale, threshold=0.6, save_screenshot=True)
+            #result = click_moving_template(page, advert_image, best_scale, threshold=0.6, save_screenshot=True)
+            result = track_object_with_optical_flow(page, loot_image, best_scale, threshold=0.6, tracking_duration=10)
             if result:
                 close_advert(page, best_scale)
 
@@ -542,6 +619,7 @@ with sync_playwright() as p:
                 # Закрытие окна корзины
                 press_escape(page)
                 last_basket_time = current_time
+        #'''
 
         # Задержка перед следующей итерацией
         time.sleep(1)
