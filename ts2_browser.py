@@ -410,7 +410,6 @@ def track_object_with_optical_flow(page, template_path, best_scale, threshold=0.
     found, first_position, first_screenshot = find_template(page, template_path, best_scale, threshold, mark_center=False)
 
     if not found:
-        print(f"Шаблон {template_path} не найден.")
         return False
 
     # Преобразуем изображение в черно-белое для использования Optical Flow
@@ -546,8 +545,6 @@ with sync_playwright() as p:
             for loot_image in loot_images:
                 result = track_object_with_optical_flow(page, loot_image, best_scale, threshold=0.6, tracking_duration=10)
                 if result:
-                    # Ожидание 0.5 секунд
-                    time.sleep(0.1)
                     # Шаг 3: Сравнение с предыдущим состоянием в указанной области
                     # Загружаем оригинальный скриншот статичной области для сравнения
                     original_image = get_screenshot(page)[store_y:store_y+store_height, store_x:store_x+store_width]
