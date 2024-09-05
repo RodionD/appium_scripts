@@ -507,7 +507,8 @@ with sync_playwright() as p:
         if station_collect_coin_interval > -1:
             if current_time - last_station_coin_time >= station_collect_coin_interval:
                 collect_coins(page, station_x, station_y, best_scale)
-                last_station_collect_coin_time = -1
+                last_station_collect_coin_time = current_time
+                station_collect_coin_interval = -1
 
         # Проверка и нажатие на basket изображение каждые 30 минут
         if current_time - last_basket_time >= basket_interval:
