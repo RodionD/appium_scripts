@@ -270,7 +270,6 @@ def click_static_template(page, template_image, best_scale, threshold=0.8, delay
         print(f"Клик по статическому объекту в координатах ({x}, {y}) с использованием масштаба {best_scale}.")
         return True, x, y
     else:
-        print(f"Шаблон не найден на статическом объекте с масштабом {best_scale}.")
         return False, None, None
 #endregion
 
@@ -463,6 +462,7 @@ def track_object_with_optical_flow(page, template_path, best_scale, threshold=0.
             prev_points = next_points
 
         time.sleep(0.2)
+    close_advert(page, best_scale)
     return True
 #endregion
 
@@ -484,7 +484,7 @@ def close_advert(page, best_scale):
         time.sleep(5)
     else:
         time.sleep(30)
-        press_escape(page)
+    press_escape(page)
 #endregion
 
 #region Перезагрузка страницы
@@ -534,17 +534,12 @@ with sync_playwright() as p:
         # Проверка и нажатие на loot изображения каждые 5 секунд
         if current_time - last_loot_time >= loot_interval:
             for loot_image in loot_images:
-                #click_moving_template(page, loot_image, best_scale, threshold=0.6)
                 track_object_with_optical_flow(page, loot_image, best_scale, threshold=0.6, tracking_duration=10)
             last_loot_time = current_time
 
         # Проверка и нажатие на advert изображение каждые 5 секунд
         if current_time - last_advert_time >= advert_interval:
-            #result = click_moving_template(page, advert_image, best_scale, threshold=0.6, save_screenshot=True)
-            result = track_object_with_optical_flow(page, advert_image, best_scale, threshold=0.6, tracking_duration=10)
-            if result:
-                close_advert(page, best_scale)
-
+            track_object_with_optical_flow(page, advert_image, best_scale, threshold=0.6, tracking_duration=10)
             last_advert_time = current_time
 
         # Проверка на запуск второй копии игры каждые 30 секунд
@@ -564,6 +559,7 @@ with sync_playwright() as p:
 
         # Проверка и нажатие на station_coin изображение каждые 30 минут
         if current_time - last_station_coin_time >= station_coin_interval:
+            print('Пришло время проверить станцию')
             found, station_x, station_y = click_static_template(page, station_coin_image, best_scale, threshold=0.85)
 
             found = True
@@ -583,12 +579,14 @@ with sync_playwright() as p:
         # Сбор золотых монеток после отправки и ожидания 7 минут
         if station_collect_coin_interval > -1:
             if current_time - last_station_coin_time >= station_collect_coin_interval:
+                print('Пришло время собрать монетки')
                 collect_coins(page, station_x, station_y, best_scale)
                 last_station_collect_coin_time = current_time
                 station_collect_coin_interval = -1
 
         # Проверка и нажатие на basket изображение каждые 30 минут
         if current_time - last_basket_time >= basket_interval:
+            print('Пришло время проверить корзину')
             result = click_static_template(page, basket_image, best_scale)
             if result:
                 time.sleep(1)
