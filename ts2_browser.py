@@ -541,7 +541,7 @@ with sync_playwright() as p:
         # Проверка и нажатие на advert изображение каждые 5 секунд
         if current_time - last_advert_time >= advert_interval:
             #result = click_moving_template(page, advert_image, best_scale, threshold=0.6, save_screenshot=True)
-            result = track_object_with_optical_flow(page, loot_image, best_scale, threshold=0.6, tracking_duration=10)
+            result = track_object_with_optical_flow(page, advert_image, best_scale, threshold=0.6, tracking_duration=10)
             if result:
                 close_advert(page, best_scale)
 
