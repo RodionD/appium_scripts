@@ -70,6 +70,15 @@ def clear_screenshot_directory(directory=screenshot_directory):
     os.makedirs(directory)  # Создание пустой папки
 #endregion
 
+#region Стартовые приготовления
+# Создание папки для скриншотов, если её нет
+if not os.path.exists(screenshot_directory):
+    os.makedirs(screenshot_directory)
+
+# Очистка папки со скриншотами при запуске
+clear_screenshot_directory(screenshot_directory)
+#endregion
+
 #region Функция для сохранения скриншота с меткой клика
 def save_screenshot_with_marker(screenshot_array, x, y, directory=screenshot_directory, prefix="screenshot", region_size=400):
     """
@@ -164,13 +173,13 @@ def find_best_scale(page, template_image, lower_scale=0.5, upper_scale=2.0, step
             _, max_val, _, _ = cv2.minMaxLoc(result)
 
             if max_val > best_val:
-                best_scale = scale
+                best_scale = round(scale, 2)
                 best_val = max_val
                 best_location = location
                 best_screenshot = screenshot_with_marker
 
     if best_scale is not None:
-        print(f"Лучший масштаб найден: {best_scale}, уверенность: {best_val:.2f}.")
+        print(f"Лучший масштаб найден: {best_scale:.2f}, уверенность: {best_val:.2f}.")
         return best_scale, best_location, best_screenshot
     else:
         print("Шаблон не найден ни на одном из масштабов.")
@@ -486,9 +495,9 @@ def click_and_hold(page, x, y, hold_time=0.2):
 #endregion
 
 #region Функция для отслеживания объекта с помощью Optical Flow
-def track_object_with_optical_flow(page, template_path, best_scale, threshold=0.6, tracking_duration=10, nearby_region_size=(100, 100)):
+def track_object_with_optical_flow(page, template_path, best_scale, threshold=0.6, tracking_duration=5):
     start_time = time.time()
-    found_nearby = True
+    result = False
     # Первоначальный поиск объекта
     found, first_position, first_screenshot = find_template(page, template_path, best_scale, threshold, mark_center=False)
 
@@ -515,53 +524,32 @@ def track_object_with_optical_flow(page, template_path, best_scale, threshold=0.
 
             # Перемещаем мышь и кликаем по новому положению
             click_and_hold(page, x, y, hold_time=0)
+            result = True
 
             # Закрытие рекламы (или других окон) после клика
-            close_advert(page, best_scale)
-
-            # Область вокруг места клика для поиска шаблона
-            nearby_left = int(x - nearby_region_size[0] // 2)
-            nearby_top = int(y - nearby_region_size[1] // 2)
-            nearby_right = int(x + nearby_region_size[0] // 2)
-            nearby_bottom = int(y + nearby_region_size[1] // 2)
-
-            # Извлекаем область вокруг клика для поиска шаблона
-            nearby_area = screenshot[nearby_top:nearby_bottom, nearby_left:nearby_right]
-
-            # Поиск шаблона рядом с местом клика
-            found_nearby, nearby_location, screenshot_with_marker = find_template(nearby_area, template_path, best_scale, threshold=threshold, mark_center=True)
-
-            # Сохранение скриншота с меткой нажатия
-            save_screenshot_with_marker(screenshot, x, y, screenshot_directory)
+            close_advert(page, best_scale, 0.2)
 
             # Обновляем предыдущий кадр и точки для следующей итерации
             prev_gray = current_gray.copy()
             prev_points = next_points
 
         time.sleep(0.2)
-
-    return not found_nearby
-#endregion
-
-#region Стартовые приготовления
-# Создание папки для скриншотов, если её нет
-if not os.path.exists(screenshot_directory):
-    os.makedirs(screenshot_directory)
-
-# Очистка папки со скриншотами при запуске
-clear_screenshot_directory(screenshot_directory)
+    if result:
+        # Сохранение скриншота с меткой нажатия
+        save_screenshot_with_marker(screenshot, x, y, screenshot_directory)
+        
+    return result
 #endregion
 
 #region Функция закрытия рекламы
-def close_advert(page, best_scale):
-    no_ads = click_static_template(page, failed_ads_image, best_scale=best_scale)
+def close_advert(page, best_scale, delay=0):
+    no_ads = click_static_template(page, failed_ads_image, best_scale=best_scale, save_screenshot=False)
     if no_ads[0]:
         time.sleep(20)
-        click_static_template(page, close_failed_ads_image, best_scale=best_scale)
+        click_static_template(page, close_failed_ads_image, best_scale=best_scale, save_screenshot=False)
         time.sleep(5)
-    else:
-        time.sleep(30)
     press_escape(page)
+    time.sleep(delay)
 #endregion
 
 #region Перезагрузка страницы
@@ -754,17 +742,28 @@ with sync_playwright() as p:
     # Бесконечный цикл
     while True:
 
+        found, store_location, screenshot = find_template(page, store_image, best_scale, threshold=0.7)
+        if not found:
+            print("Область с шаблоном store.png не найдена, пропускаем итерацию.")
+            continue
+        else:
+            print("Новая итерация.")
+
         current_time = time.time()
 
         # Проверка и нажатие на loot изображения каждые 5 секунд
         if current_time - last_loot_time >= loot_interval:
             for loot_image in loot_images:
-                result = track_object_with_optical_flow(page, loot_image, best_scale, threshold=0.6, tracking_duration=10, nearby_region_size=(150,200))
+                result = track_object_with_optical_flow(page, loot_image, best_scale, threshold=0.6)
+                if result:
+                    print("Что-то из лута было найдено, но хз, собрано ли...")
             last_loot_time = current_time
 
         # Проверка и нажатие на advert изображение каждые 5 секунд
         if current_time - last_advert_time >= advert_interval:
-            track_object_with_optical_flow(page, advert_image, best_scale, threshold=0.6, tracking_duration=10, nearby_region_size=(150,200))
+            result = track_object_with_optical_flow(page, advert_image, best_scale, threshold=0.6)
+            if result:
+                print("Похоже мы нашли гемку, но хз, собрано ли...")
             last_advert_time = current_time
 
         # Проверка на запуск второй копии игры каждые 30 секунд
