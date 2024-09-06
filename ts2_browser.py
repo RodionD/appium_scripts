@@ -350,7 +350,7 @@ def find_template_in_image_with_alpha(page, template_image, best_scale, threshol
         return False, None, screenshot_array
 #endregion
 
-#region Функция для клика по статическому объекту с использованием найденного масштаба
+#region Функция для клика по позиции
 def click_by_pos(page, x, y):
     """Функция клика по статическому объекту по координатам."""
 
@@ -742,21 +742,30 @@ def perform_mouse_scroll(frame, distance_percentage_x=0, distance_percentage_y=0
         print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка при выполнении скролла в фрейме: {e}')
 #endregion
 
-#region Функция для запуска отслеживания комбинаций клавиш
+#region Запуска отслеживания комбинаций клавиш
 def handle_key_combinations():
     with keyboard.Listener(on_press=on_press) as listener:
         listener.join()
 #endregion
 
+#region Обработки нажатий клавиш
+def on_press(key):
+    global break_mark
+    try:
+        if key == keyboard.Key.ctrl_l and keyboard.Key.alt_l and keyboard.KeyCode(char='q'):
+            print("Нажата комбинация Ctrl+Alt+Q в браузере. Устанавливаем индикатор для завершения скрипта.")
+            break_mark = True
+
+    except AttributeError:
+        pass
+#endregion
+
 #region Запись состояния
 def save_game_state(page, start):
 
-    if start:
-        name_prefix = '0_start'
-    else:
-        name_prefix = '1_end'
+    name_prefix = f'{"0_start" if start else "1_stop"}'
 
-    print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Сохраняем состояние {start}')
+    print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Сохраняем состояние {"старт" if start else "стоп"}')
     # Скрин главного экрана
     screenshot = get_screenshot(page)
     cv2.imwrite(f"{screenshot_directory}/{name_prefix}_main.png", screenshot)
@@ -781,8 +790,8 @@ def save_game_state(page, start):
 #region Логика скрипта
 
 # Запуск функции отслеживания комбинаций клавиш в отдельном потоке
-#key_thread = threading.Thread(target=handle_key_combinations)
-#key_thread.start()
+key_thread = threading.Thread(target=handle_key_combinations)
+key_thread.start()
 
 with sync_playwright() as p:
     browser = p.chromium.connect_over_cdp("http://localhost:8888")
@@ -804,11 +813,6 @@ with sync_playwright() as p:
     # Запись начального состояния
     save_game_state(page, start=True)
 
-    '''
-    result = adjust_projection_and_find_template_with_alpha(page, road_image, best_scale, known_corner=(275, 275))
-    if result[0]:
-        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] нашли')`
-    '''
     #'''
     # Бесконечный цикл
     while True:
