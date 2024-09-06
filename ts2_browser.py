@@ -11,6 +11,7 @@ import random
 from pynput import keyboard
 import sys
 import platform
+from datetime import datetime
 #endregion
 
 #region Путь к изображениям
@@ -46,6 +47,7 @@ locomotive_image = f'{images_path}locomotive.png'
 screenshot_counter = 0
 debug_screenshot_counter = 0
 error_counter = 0
+iteration_count = 0
 break_mark = False
 screenshot_directory = "./screenshots" 
 
@@ -57,6 +59,9 @@ context = None
 
 # Максимальное количество сохраняемых скриншотов
 MAX_SCREENSHOTS = 10
+
+# Максимальное количество неверных итерация до перезагрузки
+max_errors = 20
 
 # Время в секундах для интервалов
 loot_interval = 5  # 5 секунд
@@ -807,17 +812,16 @@ with sync_playwright() as p:
             save_game_state(page, start=False)
             break
 
-        if error_counter >= 20:
-            print("Что-то не так, подвигаем мышкой.")
+        if error_counter >= max_errors:
+            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Произошло {max_errors} ошибок, подвигаем мышкой.')
             perform_mouse_scroll(page, distance_percentage_y=-2)  # Вверх
             perform_mouse_scroll(page, distance_percentage_y=2)  # Вниз
             error_counter = 0
             
         result = find_template(page, kicked_image, best_scale=1)
         if(result[0]):
-            print(f"Похоже нас кикнули снова, перегружаем страницу, ошибок было - {error_counter}.")
+            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Похоже нас кикнули снова, перегружаем страницу.')
             reload_page(page)
-            error_counter += 1
             continue
 
         close_advert(page,best_scale)
@@ -825,10 +829,12 @@ with sync_playwright() as p:
         click_static_template(page, station_image, best_scale, save_screenshot=False)
         found, store_location, screenshot = find_template(page, store_image, best_scale, threshold=0.7)
         if not found:
-            print("Область с шаблоном store.png не найдена, пропускаем итерацию.")
+            error_counter += 1
+            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Область с шаблоном store.png не найдена, пропускаем итерацию - {error_counter}')
             continue
         else:
-            print("Новая итерация.")
+            iteration_count += 1
+            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Новая итерация #{iteration_count}.')
 
         current_time = time.time()
 
@@ -837,14 +843,14 @@ with sync_playwright() as p:
             for loot_image in loot_images:
                 result = track_object_with_optical_flow(page, loot_image, best_scale, threshold=0.6)
                 if result:
-                    print("Что-то из лута было найдено, но хз, собрано ли...")
+                    print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Что-то из лута было найдено, но хз, собрано ли...')
             last_loot_time = current_time
 
         # Проверка и нажатие на advert изображение каждые 5 секунд
         if current_time - last_advert_time >= advert_interval:
             result = track_object_with_optical_flow(page, advert_image, best_scale, threshold=0.6)
             if result:
-                print("Похоже мы нашли гемку, но хз, собрано ли...")
+                print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Похоже мы нашли гемку, но хз, собрано ли...')
             last_advert_time = current_time
 
         # Проверка на запуск второй копии игры каждые 30 секунд
@@ -853,7 +859,7 @@ with sync_playwright() as p:
             result = find_template(page, restart_image, best_scale)
             if result:
                 if result[0]:
-                    print("Есть второй вход - ждём 5 минут.")
+                    print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Есть второй вход - ждём 5 минут.')
                     time.sleep(299)
                     reload_page(page)
 
@@ -862,7 +868,7 @@ with sync_playwright() as p:
         #'''
         # Проверка и нажатие на station_coin изображение каждые 30 минут
         if current_time - last_station_coin_time >= station_coin_interval:
-            print('Пришло время проверить станцию')
+            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Пришло время проверить станцию')
             found, station_x, station_y = click_static_template(page, station_coin_image, best_scale, threshold=0.85)
 
             if found:
@@ -891,7 +897,7 @@ with sync_playwright() as p:
 
         # Проверка и нажатие на basket изображение каждые 30 минут
         if current_time - last_basket_time >= basket_interval:
-            print('Пришло время проверить корзину')
+            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Пришло время проверить корзину')
             result = click_static_template(page, basket_image, best_scale, save_screenshot=False)
             if result:
                 time.sleep(0.5)
