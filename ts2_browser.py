@@ -8,6 +8,9 @@ import os
 import threading
 import shutil
 import random
+from pynput import keyboard
+import sys
+import platform
 #endregion
 
 #region Путь к изображениям
@@ -36,13 +39,21 @@ close_failed_ads_image = f'{images_path}close_failed_ads.png'
 store_image = f'{images_path}store.png'
 road_image = f'{images_path}road.png'
 kicked_image = f'{images_path}kicked.png'
+locomotive_image = f'{images_path}locomotive.png'
 #endregion
 
 #region Обявление переменных
 screenshot_counter = 0
 debug_screenshot_counter = 0
 error_counter = 0
+break_mark = False
 screenshot_directory = "./screenshots" 
+
+# Название окна браузера, в котором открыта игра
+target_window_title = "Play Trainstation 2 on PC"
+
+# Контекст текущего браузера
+context = None
 
 # Максимальное количество сохраняемых скриншотов
 MAX_SCREENSHOTS = 10
@@ -633,7 +644,7 @@ def analyze_area_change(page, center_coords, area_size, original_image, screensh
         return False
 #endregion
 
-#region ункция подбора мустоположения игрового поля
+#region Подбор местоположения игрового поля
 def adjust_projection_and_find_template_with_alpha(page, template_image, best_scale, known_corner=None, threshold=0.8, step_percentage=0.05, max_attempts=10):
     """
     Корректирует проекцию игрового поля и ищет шаблон на странице с учётом известного угла.
@@ -722,16 +733,55 @@ def perform_mouse_scroll(frame, distance_percentage_x=0, distance_percentage_y=0
         print(f"Ошибка при выполнении скролла в фрейме: {e}")
 #endregion
 
+#region Функция для запуска отслеживания комбинаций клавиш
+def handle_key_combinations():
+    with keyboard.Listener(on_press=on_press) as listener:
+        listener.join()
+#endregion
+
+#region Запись состояния
+def save_game_state(page, start):
+
+    if start:
+        name_prefix = '0_start'
+    else:
+        name_prefix = '1_end'
+
+    # Скрин главного экрана
+    screenshot = get_screenshot(page)
+    cv2.imwrite(f"{screenshot_directory}/{name_prefix}_main.png", screenshot)
+
+    # Скрин депо
+    click_static_template(page, locomotive_image, best_scale, save_screenshot=False)
+    time.sleep(0.2)
+    screenshot = get_screenshot(page)
+    cv2.imwrite(f"{screenshot_directory}/{name_prefix}_depo.png", screenshot)
+    press_escape(page)
+    time.sleep(0.2)
+
+    # Скрин склада
+    click_static_template(page, store_image, best_scale, save_screenshot=False)
+    time.sleep(0.2)
+    screenshot = get_screenshot(page)
+    cv2.imwrite(f"{screenshot_directory}/{name_prefix}_store.png", screenshot)
+    press_escape(page)
+    time.sleep(0.2)
+#endregion
+
 #region Логика скрипта
+
+# Запуск функции отслеживания комбинаций клавиш в отдельном потоке
+#key_thread = threading.Thread(target=handle_key_combinations)
+#key_thread.start()
+
 with sync_playwright() as p:
     browser = p.chromium.connect_over_cdp("http://localhost:8888")
     context = browser.contexts[0]  # Берем первый контекст (окно)
 
     # Пытаемся переключиться на вкладку с нужным заголовком
-    page = switch_to_tab(context, "Play Trainstation 2 on PC")
+    page = switch_to_tab(context, target_window_title)
     
-    if not page:
-        # Если вкладка не найдена, открываем новую
+    if not page: # Если вкладка не найдена, открываем новую
         page = context.new_page()
         page.goto("https://portal.pixelfederation.com/en/trainstation2")
     
@@ -741,14 +791,21 @@ with sync_playwright() as p:
     # Запуск функции поиска наилучшего масштаба
     best_scale, best_location, screenshot_with_marker = find_best_scale(page, build_shop_image, lower_scale=0.5, upper_scale=2.0, step=0.1, mark_center=True)
 
+    # Запись начального состояния
+    save_game_state(page, start=True)
+
     '''
     result = adjust_projection_and_find_template_with_alpha(page, road_image, best_scale, known_corner=(275, 275))
     if result[0]:
-        print('нашли')
+        print('нашли')`
     '''
     #'''
     # Бесконечный цикл
     while True:
+
+        if break_mark:
+            save_game_state(page, start=False)
+            break
 
         if error_counter >= 20:
             print("Что-то не так, подвигаем мышкой.")
