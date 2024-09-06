@@ -61,7 +61,11 @@ context = None
 MAX_SCREENSHOTS = 10
 
 # Максимальное количество неверных итерация до перезагрузки
-max_errors = 20
+max_errors = 10
+
+# Счётчик нажатий на вкусняшки
+loot_clicks_count = 0
+advert_clicks_count = 0
 
 # Время в секундах для интервалов
 loot_interval = 5  # 5 секунд
@@ -180,7 +184,7 @@ def find_best_scale(page, template_image, lower_scale=0.5, upper_scale=2.0, step
     screenshot_array = get_screenshot(page)
     
     if screenshot_array is None:
-        print("Скриншот не найден.")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Скриншот не найден.')
         return None, None, None
 
     # Проход по диапазону масштабов
@@ -199,10 +203,10 @@ def find_best_scale(page, template_image, lower_scale=0.5, upper_scale=2.0, step
                 best_screenshot = screenshot_with_marker
 
     if best_scale is not None:
-        print(f"Лучший масштаб найден: {best_scale:.2f}, уверенность: {best_val:.2f}.")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Лучший масштаб найден: {best_scale:.2f}, уверенность: {best_val:.2f}.')
         return best_scale, best_location, best_screenshot
     else:
-        print("Шаблон не найден ни на одном из масштабов.")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Шаблон не найден ни на одном из масштабов.')
         return None, None, None
 #endregion
     
@@ -215,7 +219,7 @@ def switch_to_tab(context, tab_title):
                 page.bring_to_front()  # Делаем вкладку активной
                 return page
         except playwright._impl._errors.Error as e:
-            print(f"Ошибка при получении заголовка страницы: {e}")
+            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка при получении заголовка страницы: {e}')
             # Если контекст выполнения разрушен, продолжаем искать дальше
             continue
     return None
@@ -245,9 +249,9 @@ def scroll_wheel(page, delta_y, steps=10):
             time.sleep(0.05)  # Небольшая задержка между прокрутками
 
         direction = "вниз" if delta_y > 0 else "вверх"
-        print(f"Колесо прокручено {direction} в main_frame на {delta_y} пикселей в {steps} шагов.")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Колесо прокручено {direction} в main_frame на {delta_y} пикселей в {steps} шагов.')
     except Exception as e:
-        print(f"Ошибка при прокрутке колесом в main_frame: {e}")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка при прокрутке колесом в main_frame: {e}')
 #endregion
 
 #region Функция поиска статического объекта
@@ -256,7 +260,7 @@ def find_template(page, template_image, best_scale, threshold=0.8, mark_center=F
     
     screenshot_array = get_screenshot(page)
     if screenshot_array is None:
-        print("Ошибка: скриншот не найден.")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка: скриншот не найден.')
         return False, None, None
 
     found, location, marked_screenshot = find_template_in_image(screenshot_array, template_image, scale=best_scale, threshold=threshold, mark_center=mark_center)
@@ -284,19 +288,19 @@ def find_template_in_image_with_alpha(page, template_image, best_scale, threshol
     # Получение скриншота страницы
     screenshot_array = get_screenshot(page)
     if screenshot_array is None:
-        print("Ошибка: скриншот не найден.")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка: скриншот не найден.')
         return False, None, None
 
     # Загрузка шаблона с альфа-каналом
     template_rgba = cv2.imread(template_image, cv2.IMREAD_UNCHANGED)
     
     if template_rgba is None:
-        print(f"Ошибка: не удалось загрузить изображение {template_image}.")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка: не удалось загрузить изображение {template_image}.')
         return False, None, None
 
     # Проверяем, содержит ли изображение альфа-канал
     if template_rgba.shape[2] != 4:
-        print(f"Ошибка: шаблон {template_image} не содержит альфа-канала.")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка: шаблон {template_image} не содержит альфа-канала.')
         return False, None, None
 
     # Отделяем альфа-канал
@@ -314,7 +318,7 @@ def find_template_in_image_with_alpha(page, template_image, best_scale, threshol
 
     # Проверка размеров маски и изображения
     if screenshot_array.shape[:2] != mask_resized_3channel.shape[:2]:
-        print(f"Ошибка: размеры маски ({mask_resized_3channel.shape[:2]}) и изображения ({screenshot_array.shape[:2]}) не совпадают.")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка: размеры маски ({mask_resized_3channel.shape[:2]}) и изображения ({screenshot_array.shape[:2]}) не совпадают.')
         return False, None, None
 
     # Применяем маску к скриншоту
@@ -393,7 +397,7 @@ def find_template_in_image(screenshot_array, template_image, scale, threshold=0.
     template = cv2.imread(template_image, cv2.IMREAD_COLOR)
     
     if template is None:
-        print(f"Ошибка: не удалось загрузить изображение {template_image}.")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка: не удалось загрузить изображение {template_image}.')
         return False, None, None
 
     # Масштабирование шаблона
@@ -429,7 +433,7 @@ def click_moving_template(page, template_image, best_scale, threshold=0.8, searc
     # Первый скриншот
     screenshot_array = get_screenshot(page)
     if screenshot_array is None:
-        print("Ошибка: скриншот не найден.")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка: скриншот не найден.')
         return False
 
     found, location1, marked_screenshot1 = find_template_in_image(screenshot_array, template_image, scale=best_scale, threshold=threshold, mark_center=False)
@@ -568,7 +572,7 @@ def close_advert(page, best_scale, delay=0):
         time.sleep(20)
         click_static_template(page, close_failed_ads_image, best_scale=best_scale, save_screenshot=False)
         time.sleep(5)
-        print('Посмотрели рекламку')
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Посмотрели рекламку')
     press_escape(page)
     time.sleep(delay)
 #endregion
@@ -637,15 +641,15 @@ def analyze_area_change(page, center_coords, area_size, original_image, screensh
         # Ограничиваем количество сохранённых скриншотов
         screenshot_filename = f"{screenshot_directory}/collect_checks_{debug_screenshot_counter % MAX_SCREENSHOTS}.png"
         save_screenshot_with_marker(screenshot_array, center_x, center_y, screenshot_directory, prefix="collect_checks")
-        print(f"Анализируемая область сохранена: {screenshot_filename}")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Анализируемая область сохранена: {screenshot_filename}')
 
         debug_screenshot_counter += 1
 
     if max_val < threshold:
-        print("Изменение обнаружено в указанной области.")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Изменение обнаружено в указанной области.')
         return True
     else:
-        print("Изменений не обнаружено.")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Изменений не обнаружено.')
         return False
 #endregion
 
@@ -683,7 +687,7 @@ def adjust_projection_and_find_template_with_alpha(page, template_image, best_sc
         found, location, marked_screenshot = find_template_in_image_with_alpha(search_area, template_image, scale=best_scale, threshold=threshold, mark_center=True)
 
         if found:
-            print(f"Шаблон найден на попытке {attempts + 1} в направлении {directions[attempts % 4]}.")
+            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Шаблон найден на попытке {attempts + 1} в направлении {directions[attempts % 4]}.')
             return True, location, marked_screenshot
 
         # Если не найден, двигаем игровое поле
@@ -698,7 +702,7 @@ def adjust_projection_and_find_template_with_alpha(page, template_image, best_sc
 
         attempts += 1
 
-    print("Не удалось найти шаблон в пределах максимального количества попыток.")
+    print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Не удалось найти шаблон в пределах максимального количества попыток.')
     return False, None, None
 #endregion
 
@@ -733,9 +737,9 @@ def perform_mouse_scroll(frame, distance_percentage_x=0, distance_percentage_y=0
         direction_x = "вправо" if scroll_distance_x > 0 else "влево" if scroll_distance_x < 0 else "по оси X не перемещено"
         direction_y = "вниз" if scroll_distance_y > 0 else "вверх" if scroll_distance_y < 0 else "по оси Y не перемещено"
 
-        print(f"Скроллинг в фрейме выполнен на {scroll_distance_x} пикселей по X ({direction_x}) и {scroll_distance_y} пикселей по Y ({direction_y}).")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Скроллинг в фрейме выполнен на {scroll_distance_x} пикселей по X ({direction_x}) и {scroll_distance_y} пикселей по Y ({direction_y}).')
     except Exception as e:
-        print(f"Ошибка при выполнении скролла в фрейме: {e}")
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка при выполнении скролла в фрейме: {e}')
 #endregion
 
 #region Функция для запуска отслеживания комбинаций клавиш
@@ -752,25 +756,26 @@ def save_game_state(page, start):
     else:
         name_prefix = '1_end'
 
+    print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Сохраняем состояние {start}')
     # Скрин главного экрана
     screenshot = get_screenshot(page)
     cv2.imwrite(f"{screenshot_directory}/{name_prefix}_main.png", screenshot)
 
     # Скрин депо
     click_static_template(page, locomotive_image, best_scale, save_screenshot=False)
-    time.sleep(0.2)
+    time.sleep(0.5)
     screenshot = get_screenshot(page)
     cv2.imwrite(f"{screenshot_directory}/{name_prefix}_depo.png", screenshot)
     press_escape(page)
-    time.sleep(0.2)
+    time.sleep(0.5)
 
     # Скрин склада
     click_static_template(page, store_image, best_scale, save_screenshot=False)
-    time.sleep(0.2)
+    time.sleep(0.5)
     screenshot = get_screenshot(page)
     cv2.imwrite(f"{screenshot_directory}/{name_prefix}_store.png", screenshot)
     press_escape(page)
-    time.sleep(0.2)
+    time.sleep(0.5)
 #endregion
 
 #region Логика скрипта
@@ -802,7 +807,7 @@ with sync_playwright() as p:
     '''
     result = adjust_projection_and_find_template_with_alpha(page, road_image, best_scale, known_corner=(275, 275))
     if result[0]:
-        print('нашли')`
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] нашли')`
     '''
     #'''
     # Бесконечный цикл
@@ -843,14 +848,16 @@ with sync_playwright() as p:
             for loot_image in loot_images:
                 result = track_object_with_optical_flow(page, loot_image, best_scale, threshold=0.6)
                 if result:
-                    print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Что-то из лута было найдено, но хз, собрано ли...')
+                    loot_clicks_count += 1
+                    print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Что-то из лута было найдено {loot_clicks_count} раз, но хз, собрано ли...')
             last_loot_time = current_time
 
         # Проверка и нажатие на advert изображение каждые 5 секунд
         if current_time - last_advert_time >= advert_interval:
             result = track_object_with_optical_flow(page, advert_image, best_scale, threshold=0.6)
             if result:
-                print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Похоже мы нашли гемку, но хз, собрано ли...')
+                advert_clicks_count += 1
+                print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Похоже мы нашли гемку {advert_clicks_count} раз, но хз, собрано ли...')
             last_advert_time = current_time
 
         # Проверка на запуск второй копии игры каждые 30 секунд
@@ -888,7 +895,7 @@ with sync_playwright() as p:
         # Сбор золотых монеток после отправки и ожидания 7 минут
         if station_collect_coin_interval > -1:
             if current_time - last_station_coin_time >= station_collect_coin_interval:
-                print('Пришло время собрать монетки')
+                print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Пришло время собрать монетки')
                 station_x, station_y = station_pos
                 collect_coins(page, station_x, station_y, best_scale)
                 last_station_collect_coin_time = current_time
