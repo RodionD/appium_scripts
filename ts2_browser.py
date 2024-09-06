@@ -35,11 +35,13 @@ failed_ads_image = f'{images_path}failed_ads.png'
 close_failed_ads_image = f'{images_path}close_failed_ads.png'
 store_image = f'{images_path}store.png'
 road_image = f'{images_path}road.png'
+kicked_image = f'{images_path}kicked.png'
 #endregion
 
 #region Обявление переменных
 screenshot_counter = 0
 debug_screenshot_counter = 0
+error_counter = 0
 screenshot_directory = "./screenshots" 
 
 # Максимальное количество сохраняемых скриншотов
@@ -61,6 +63,7 @@ last_station_coin_time = time.time() - 1800 # Запуск первой пров
 last_station_collect_coin_time = time.time()
 last_restart = time.time()
 station_pos = [0,0]
+get_gear_pos = [0,0]
 #endregion
 
 #region Функция для очистки папки со скриншотами
@@ -240,7 +243,7 @@ def find_template(page, template_image, best_scale, threshold=0.8, mark_center=F
         print("Ошибка: скриншот не найден.")
         return False, None, None
 
-    found, location, marked_screenshot = find_template_in_image(screenshot_array, template_image, best_scale, threshold=threshold, mark_center=mark_center)
+    found, location, marked_screenshot = find_template_in_image(screenshot_array, template_image, scale=best_scale, threshold=threshold, mark_center=mark_center)
 
     if found:
         x, y = location
@@ -413,7 +416,7 @@ def click_moving_template(page, template_image, best_scale, threshold=0.8, searc
         print("Ошибка: скриншот не найден.")
         return False
 
-    found, location1, marked_screenshot1 = find_template_in_image(screenshot_array, template_image, best_scale, threshold=threshold, mark_center=False)
+    found, location1, marked_screenshot1 = find_template_in_image(screenshot_array, template_image, scale=best_scale, threshold=threshold, mark_center=False)
 
     if not found:
         return False
@@ -438,7 +441,7 @@ def click_moving_template(page, template_image, best_scale, threshold=0.8, searc
     roi_screenshot = screenshot_array2[roi_top:roi_bottom, roi_left:roi_right]
 
     # Поиск шаблона в области второго скриншота
-    found, location2, marked_screenshot2 = find_template_in_image(roi_screenshot, template_image, best_scale, threshold=threshold, mark_center=False)
+    found, location2, marked_screenshot2 = find_template_in_image(roi_screenshot, template_image, scale=best_scale, threshold=threshold, mark_center=False)
 
     if not found:
         return False
@@ -661,7 +664,7 @@ def adjust_projection_and_find_template_with_alpha(page, template_image, best_sc
             search_area = screenshot_array
 
         # Ищем шаблон с альфаканалом
-        found, location, marked_screenshot = find_template_in_image_with_alpha(search_area, template_image, best_scale, threshold=threshold, mark_center=True)
+        found, location, marked_screenshot = find_template_in_image_with_alpha(search_area, template_image, scale=best_scale, threshold=threshold, mark_center=True)
 
         if found:
             print(f"Шаблон найден на попытке {attempts + 1} в направлении {directions[attempts % 4]}.")
@@ -747,7 +750,21 @@ with sync_playwright() as p:
     # Бесконечный цикл
     while True:
 
+        if error_counter >= 20:
+            print("Что-то не так, подвигаем мышкой.")
+            perform_mouse_scroll(page, distance_percentage_y=-2)  # Вверх
+            perform_mouse_scroll(page, distance_percentage_y=2)  # Вниз
+            error_counter = 0
+            
+        result = find_template(page, kicked_image, best_scale=1)
+        if(result[0]):
+            print(f"Похоже нас кикнули снова, перегружаем страницу, ошибок было - {error_counter}.")
+            reload_page(page)
+            error_counter += 1
+            continue
+
         close_advert(page,best_scale)
+        
         click_static_template(page, station_image, best_scale, save_screenshot=False)
         found, store_location, screenshot = find_template(page, store_image, best_scale, threshold=0.7)
         if not found:
@@ -825,8 +842,10 @@ with sync_playwright() as p:
                 result = click_static_template(page, basket_free_image, best_scale, offset_y=160, threshold=0.85, save_screenshot=False)
                 if result:
                     # Нажатие на кнопку сбора безрекламных шестерёнок
-                    result = click_static_template(page, start_free_gear_image, best_scale, offset_y=160, save_screenshot=False)
+                    result, gear_pos_x, gear_pos_y = click_static_template(page, start_free_gear_image, best_scale, offset_y=160, save_screenshot=False)
                     if result:
+                        if(get_gear_pos == 0,0):
+                            get_gear_pos = gear_pos_x, gear_pos_y
                         time.sleep(5)
                         press_escape(page)
                         time.sleep(1)
@@ -834,8 +853,8 @@ with sync_playwright() as p:
                 result = click_static_template(page, basket_advert_image, best_scale, offset_y=160, save_screenshot=False)
                 if result:
                     # Нажатие на кнопку сбора рекламных шестерёнок
-                    result = click_static_template(page, start_advert_gear_image, best_scale, offset_y=160, save_screenshot=False)
-                    if result:
+                    if(get_gear_pos[0] != 0):
+                        click_by_pos(get_gear_pos[0], get_gear_pos[1])
                         time.sleep(2)
                         close_advert(page, best_scale)
                         time.sleep(3)
