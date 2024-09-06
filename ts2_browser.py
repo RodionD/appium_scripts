@@ -184,7 +184,6 @@ def find_best_scale(page, template_image, lower_scale=0.5, upper_scale=2.0, step
     screenshot_array = get_screenshot(page)
     
     if screenshot_array is None:
-        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Скриншот не найден.')
         return None, None, None
 
     # Проход по диапазону масштабов
@@ -206,7 +205,6 @@ def find_best_scale(page, template_image, lower_scale=0.5, upper_scale=2.0, step
         print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Лучший масштаб найден: {best_scale:.2f}, уверенность: {best_val:.2f}.')
         return best_scale, best_location, best_screenshot
     else:
-        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Шаблон не найден ни на одном из масштабов.')
         return None, None, None
 #endregion
     
@@ -260,7 +258,6 @@ def find_template(page, template_image, best_scale, threshold=0.8, mark_center=F
     
     screenshot_array = get_screenshot(page)
     if screenshot_array is None:
-        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка: скриншот не найден.')
         return False, None, None
 
     found, location, marked_screenshot = find_template_in_image(screenshot_array, template_image, scale=best_scale, threshold=threshold, mark_center=mark_center)
@@ -288,7 +285,6 @@ def find_template_in_image_with_alpha(page, template_image, best_scale, threshol
     # Получение скриншота страницы
     screenshot_array = get_screenshot(page)
     if screenshot_array is None:
-        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка: скриншот не найден.')
         return False, None, None
 
     # Загрузка шаблона с альфа-каналом
@@ -433,7 +429,6 @@ def click_moving_template(page, template_image, best_scale, threshold=0.8, searc
     # Первый скриншот
     screenshot_array = get_screenshot(page)
     if screenshot_array is None:
-        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка: скриншот не найден.')
         return False
 
     found, location1, marked_screenshot1 = find_template_in_image(screenshot_array, template_image, scale=best_scale, threshold=threshold, mark_center=False)
@@ -522,46 +517,49 @@ def click_and_hold(page, x, y, hold_time=0.2):
 def track_object_with_optical_flow(page, template_path, best_scale, threshold=0.6, tracking_duration=5):
     start_time = time.time()
     result = False
-    # Первоначальный поиск объекта
-    found, first_position, first_screenshot = find_template(page, template_path, best_scale, threshold, mark_center=False)
+    try:
+        # Первоначальный поиск объекта
+        found, first_position, first_screenshot = find_template(page, template_path, best_scale, threshold, mark_center=False)
 
-    if not found:
-        return False
+        if not found:
+            return False
 
-    # Преобразуем изображение в черно-белое для использования Optical Flow
-    prev_gray = cv2.cvtColor(first_screenshot, cv2.COLOR_BGR2GRAY)
-    prev_points = np.array([[first_position]], dtype=np.float32)
+        # Преобразуем изображение в черно-белое для использования Optical Flow
+        prev_gray = cv2.cvtColor(first_screenshot, cv2.COLOR_BGR2GRAY)
+        prev_points = np.array([[first_position]], dtype=np.float32)
 
-    lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+        lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
-    while time.time() - start_time < tracking_duration:
-        # Получаем текущий кадр (снимок экрана)
-        screenshot = get_screenshot(page)
-        current_gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+        while time.time() - start_time < tracking_duration:
+            # Получаем текущий кадр (снимок экрана)
+            screenshot = get_screenshot(page)
+            current_gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
 
-        # Используем Optical Flow для отслеживания положения объекта
-        next_points, status, error = cv2.calcOpticalFlowPyrLK(prev_gray, current_gray, prev_points, None, **lk_params)
+            # Используем Optical Flow для отслеживания положения объекта
+            next_points, status, error = cv2.calcOpticalFlowPyrLK(prev_gray, current_gray, prev_points, None, **lk_params)
 
-        if status[0][0] == 1:
-            new_position = next_points[0][0]
-            x, y = float(new_position[0]), float(new_position[1])
+            if status[0][0] == 1:
+                new_position = next_points[0][0]
+                x, y = float(new_position[0]), float(new_position[1])
 
-            # Перемещаем мышь и кликаем по новому положению
-            click_and_hold(page, x, y, hold_time=0)
-            result = True
+                # Перемещаем мышь и кликаем по новому положению
+                click_and_hold(page, x, y, hold_time=0)
+                result = True
 
-            # Закрытие рекламы (или других окон) после клика
-            close_advert(page, best_scale, 0.2)
+                # Закрытие рекламы (или других окон) после клика
+                close_advert(page, best_scale, 0.2)
 
-            # Обновляем предыдущий кадр и точки для следующей итерации
-            prev_gray = current_gray.copy()
-            prev_points = next_points
+                # Обновляем предыдущий кадр и точки для следующей итерации
+                prev_gray = current_gray.copy()
+                prev_points = next_points
 
-        time.sleep(0.2)
-    if result:
-        # Сохранение скриншота с меткой нажатия
-        save_screenshot_with_marker(screenshot, x, y, screenshot_directory)
-        
+            time.sleep(0.2)
+        if result:
+            # Сохранение скриншота с меткой нажатия
+            save_screenshot_with_marker(screenshot, x, y, screenshot_directory)
+    except Exception as e:
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка при отслеживании объекта: {e}')
+    
     return result
 #endregion
 
@@ -752,8 +750,8 @@ def handle_key_combinations():
 def on_press(key):
     global break_mark
     try:
-        if key == keyboard.Key.ctrl_l and keyboard.Key.alt_l and keyboard.KeyCode(char='q'):
-            print("Нажата комбинация Ctrl+Alt+Q в браузере. Устанавливаем индикатор для завершения скрипта.")
+        if key == (keyboard.Key.ctrl_l and keyboard.Key.alt_l and keyboard.KeyCode(char='q')):
+            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Нажата комбинация Ctrl+Alt+Q. Устанавливаем индикатор для завершения скрипта.')
             break_mark = True
 
     except AttributeError:
@@ -790,8 +788,8 @@ def save_game_state(page, start):
 #region Логика скрипта
 
 # Запуск функции отслеживания комбинаций клавиш в отдельном потоке
-key_thread = threading.Thread(target=handle_key_combinations)
-key_thread.start()
+#key_thread = threading.Thread(target=handle_key_combinations)
+#key_thread.start()
 
 with sync_playwright() as p:
     browser = p.chromium.connect_over_cdp("http://localhost:8888")
@@ -819,7 +817,7 @@ with sync_playwright() as p:
 
         if break_mark:
             save_game_state(page, start=False)
-            break
+            sys.exit()
 
         if error_counter >= max_errors:
             print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Произошло {max_errors} ошибок, подвигаем мышкой.')
@@ -839,7 +837,7 @@ with sync_playwright() as p:
         found, store_location, screenshot = find_template(page, store_image, best_scale, threshold=0.7)
         if not found:
             error_counter += 1
-            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Область с шаблоном store.png не найдена, пропускаем итерацию - {error_counter}')
+            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Область с шаблоном store.png не найдена, пропускаем итерацию - {error_counter} из {max_errors}')
             continue
         else:
             iteration_count += 1
@@ -913,10 +911,10 @@ with sync_playwright() as p:
             if result:
                 time.sleep(0.5)
                 # Нажатие на кнопку сбора безрекламных шестерёнок
-                result = click_static_template(page, basket_free_image, best_scale, offset_y=160, threshold=0.85, save_screenshot=False)
+                result = click_static_template(page, basket_free_image, best_scale, offset_y=160, threshold=0.7, save_screenshot=False)
                 if result:
                     # Нажатие на кнопку сбора безрекламных шестерёнок
-                    result, gear_pos_x, gear_pos_y = click_static_template(page, start_free_gear_image, best_scale, offset_y=160, save_screenshot=False)
+                    result, gear_pos_x, gear_pos_y = click_static_template(page, start_free_gear_image, best_scale, offset_y=160, threshold=0.7, save_screenshot=False)
                     if result:
                         if(get_gear_pos == 0,0):
                             get_gear_pos = gear_pos_x, gear_pos_y
@@ -924,7 +922,7 @@ with sync_playwright() as p:
                         press_escape(page)
                         time.sleep(1)
                 # Нажатие на кнопку сбора рекламных шестерёнок
-                result = click_static_template(page, basket_advert_image, best_scale, offset_y=160, save_screenshot=False)
+                result = click_static_template(page, basket_advert_image, best_scale, offset_y=160, threshold=0.7, save_screenshot=False)
                 if result:
                     # Нажатие на кнопку сбора рекламных шестерёнок
                     if(get_gear_pos[0] != 0):
@@ -937,5 +935,6 @@ with sync_playwright() as p:
                 last_basket_time = current_time
         # Задержка перед следующей итерацией
         time.sleep(1)
+    #key_thread.join()
     #'''
 #endregion
