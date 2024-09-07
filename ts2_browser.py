@@ -12,6 +12,7 @@ from pynput import keyboard
 import sys
 import platform
 from datetime import datetime
+import platform
 #endregion
 
 #region Путь к изображениям
@@ -109,6 +110,20 @@ if not os.path.exists(screenshot_directory):
 
 # Очистка папки со скриншотами при запуске
 clear_screenshot_directory(screenshot_directory)
+#endregion
+
+#region Получение типа ОС
+def get_os():
+    """Определение операционной системы."""
+    os_name = platform.system()
+    if os_name == "Windows":
+        return "windows"
+    elif os_name == "Linux":
+        return "linux"
+    elif os_name == "Darwin":
+        return "macos"
+    else:
+        return "unknown"
 #endregion
 
 #region Функция для сохранения скриншота с меткой клика
@@ -929,7 +944,7 @@ with sync_playwright() as p:
 
             last_restart_time = current_time
 
-        #'''
+        '''
         # Проверка и нажатие на station_coin изображение каждые 30 минут
         if current_time - last_station_coin_time >= station_coin_interval:
             print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Пришло время проверить станцию')
@@ -957,7 +972,7 @@ with sync_playwright() as p:
                 collect_coins(page, station_x, station_y, best_scale)
                 last_station_collect_coin_time = current_time
                 station_collect_coin_interval = -1
-        #'''
+        '''
 
         # Проверка и нажатие на basket изображение каждые 30 минут
         if current_time - last_basket_time >= basket_interval:
