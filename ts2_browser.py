@@ -17,6 +17,7 @@ from datetime import datetime
 #region Путь к изображениям
 images_path = './images/'
 loot_images = [f'{images_path}loot1.png', f'{images_path}loot2.png']
+season_loot_image = f'{images_path}season_loot.png'
 materials_images = []
 world_image = f'{images_path}world.png'
 advert_image = f'{images_path}advert.png'
@@ -41,6 +42,7 @@ store_image = f'{images_path}store.png'
 road_image = f'{images_path}road.png'
 kicked_image = f'{images_path}kicked.png'
 locomotive_image = f'{images_path}locomotive.png'
+season_image = f'{images_path}season.png'
 #endregion
 
 #region Обявление переменных
@@ -50,6 +52,8 @@ error_counter = 0
 iteration_count = 0
 break_mark = False
 screenshot_directory = "./screenshots" 
+station_pos = [0,0]
+get_gear_pos = [0,0]
 
 # Название окна браузера, в котором открыта игра
 target_window_title = "Play Trainstation 2 on PC"
@@ -63,8 +67,12 @@ MAX_SCREENSHOTS = 10
 # Максимальное количество неверных итерация до перезагрузки
 max_errors = 10
 
+# Максимальное количество итераций в союзном регионе
+max_season_iteration_count = 5
+
 # Счётчик нажатий на вкусняшки
 loot_clicks_count = 0
+season_loot_clicks_count = 0
 advert_clicks_count = 0
 
 # Время в секундах для интервалов
@@ -74,6 +82,7 @@ basket_interval = 1800 # 30 минут
 station_coin_interval = 1800  # 30 минут
 restart_interval = 30 # 30 секунд
 station_collect_coin_interval = -1
+season_region_inteval = 300
 
 # Время последнего выполнения
 last_loot_time = time.time()
@@ -81,9 +90,8 @@ last_advert_time = time.time()
 last_basket_time = time.time() - 1800 # Запуск первой проверки через 15 минут после запуска скрипта
 last_station_coin_time = time.time() - 1800 # Запуск первой проверки сразу после запуска скрипта
 last_station_collect_coin_time = time.time()
-last_restart = time.time()
-station_pos = [0,0]
-get_gear_pos = [0,0]
+last_restart_time = time.time()
+last_season_region_time = time.time() - 300
 #endregion
 
 #region Функция для очистки папки со скриншотами
@@ -253,7 +261,7 @@ def scroll_wheel(page, delta_y, steps=10):
 #endregion
 
 #region Функция поиска статического объекта
-def find_template(page, template_image, best_scale, threshold=0.8, mark_center=False):
+def find_template_with_alpha(page, template_image, best_scale, threshold=0.8, mark_center=False):
     """Функция поиска статического объекта."""
     
     screenshot_array = get_screenshot(page)
@@ -270,13 +278,13 @@ def find_template(page, template_image, best_scale, threshold=0.8, mark_center=F
 #endregion
 
 #region Функция поиска статического объекта с учётом альфаканала
-def find_template_in_image_with_alpha(page, template_image, best_scale, threshold=0.8, mark_center=False):
+def find_template_with_alpha(page, template_image, best_scale, threshold=0.8, mark_center=False):
     """
     Функция для поиска шаблона в скриншоте с использованием альфа-канала.
     
     :param page: Страница с игрой.
     :param template_image: Путь к изображению шаблона с альфа-каналом.
-    :param scale: Масштаб для поиска.
+    :param best_scale: Масштаб для поиска.
     :param threshold: Пороговое значение совпадения.
     :param mark_center: Маркировать центр найденного шаблона кружком.
     :return: Найден ли шаблон (True/False), координаты центра шаблона, модифицированный скриншот.
@@ -291,12 +299,12 @@ def find_template_in_image_with_alpha(page, template_image, best_scale, threshol
     template_rgba = cv2.imread(template_image, cv2.IMREAD_UNCHANGED)
     
     if template_rgba is None:
-        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка: не удалось загрузить изображение {template_image}.')
+        print(f"Ошибка: не удалось загрузить изображение {template_image}.")
         return False, None, None
 
     # Проверяем, содержит ли изображение альфа-канал
     if template_rgba.shape[2] != 4:
-        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка: шаблон {template_image} не содержит альфа-канала.')
+        print(f"Ошибка: шаблон {template_image} не содержит альфа-канала.")
         return False, None, None
 
     # Отделяем альфа-канал
@@ -310,21 +318,21 @@ def find_template_in_image_with_alpha(page, template_image, best_scale, threshol
     mask_resized = cv2.resize(alpha, (template_resized.shape[1], template_resized.shape[0]))
 
     # Преобразуем маску к одно-канальному изображению (чёрно-белому)
-    mask_resized_3channel = cv2.merge([mask_resized, mask_resized, mask_resized])
+    _, mask_binary = cv2.threshold(mask_resized, 1, 255, cv2.THRESH_BINARY)
 
-    # Проверка размеров маски и изображения
-    if screenshot_array.shape[:2] != mask_resized_3channel.shape[:2]:
-        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Ошибка: размеры маски ({mask_resized_3channel.shape[:2]}) и изображения ({screenshot_array.shape[:2]}) не совпадают.')
+    # Находим границы области в скриншоте, где можно применить масштабированный шаблон
+    screenshot_height, screenshot_width = screenshot_array.shape[:2]
+    template_height, template_width = template_resized.shape[:2]
+
+    if template_height > screenshot_height or template_width > screenshot_width:
+        print(f"Ошибка: шаблон больше размера скриншота.")
         return False, None, None
 
-    # Применяем маску к скриншоту
-    screenshot_masked = cv2.bitwise_and(screenshot_array, screenshot_array, mask=mask_resized)
-
     # Применяем маску к шаблону
-    template_masked = cv2.bitwise_and(template_resized, template_resized, mask=mask_resized)
+    template_masked = cv2.bitwise_and(template_resized, template_resized, mask=mask_binary)
 
     # Поиск шаблона в изображении
-    result = cv2.matchTemplate(screenshot_masked, template_masked, cv2.TM_CCOEFF_NORMED)
+    result = cv2.matchTemplate(screenshot_array, template_masked, cv2.TM_CCOEFF_NORMED)
     min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
 
     if max_val >= threshold:
@@ -359,7 +367,7 @@ def click_static_template(page, template_image, best_scale, threshold=0.8, delay
     """Функция клика по статическому объекту с сохранением скриншота с меткой."""
 
     time.sleep(delay_time)
-    found, location, marked_screenshot = find_template(page=page, template_image=template_image, best_scale=best_scale, threshold=threshold)
+    found, location, marked_screenshot = find_template_with_alpha(page, template_image, best_scale, threshold)
 
     if found:
         x, y = location
@@ -519,7 +527,7 @@ def track_object_with_optical_flow(page, template_path, best_scale, threshold=0.
     result = False
     try:
         # Первоначальный поиск объекта
-        found, first_position, first_screenshot = find_template(page, template_path, best_scale, threshold, mark_center=False)
+        found, first_position, first_screenshot = find_template_with_alpha(page, template_path, best_scale, threshold, mark_center=False)
 
         if not found:
             return False
@@ -682,7 +690,7 @@ def adjust_projection_and_find_template_with_alpha(page, template_image, best_sc
             search_area = screenshot_array
 
         # Ищем шаблон с альфаканалом
-        found, location, marked_screenshot = find_template_in_image_with_alpha(search_area, template_image, scale=best_scale, threshold=threshold, mark_center=True)
+        found, location, marked_screenshot = find_template_with_alpha(search_area, template_image, scale=best_scale, threshold=threshold, mark_center=True)
 
         if found:
             print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Шаблон найден на попытке {attempts + 1} в направлении {directions[attempts % 4]}.')
@@ -731,6 +739,7 @@ def perform_mouse_scroll(frame, distance_percentage_x=0, distance_percentage_y=0
         # Перемещение по оси X и Y
         frame.mouse.move(center_x + scroll_distance_x, center_y + scroll_distance_y, steps=10)  
         frame.mouse.up()  # Отпускаем левую кнопку мыши
+        frame.mouse.click(center_x, center_y)
 
         direction_x = "вправо" if scroll_distance_x > 0 else "влево" if scroll_distance_x < 0 else "по оси X не перемещено"
         direction_y = "вниз" if scroll_distance_y > 0 else "вверх" if scroll_distance_y < 0 else "по оси Y не перемещено"
@@ -785,6 +794,42 @@ def save_game_state(page, start):
     time.sleep(0.5)
 #endregion
 
+#region Сбор лута в союзном регионе
+def collect_season_loots(page, best_scale):
+    global season_loot_clicks_count
+    global advert_clicks_count
+    global world_image
+    global station_image
+    close_advert(page,best_scale)
+    result = click_static_template(page, world_image, best_scale, save_screenshot=False, threshold=0.6)
+    if result[0]:
+        time.sleep(0.5)
+        result = click_static_template(page, season_image, best_scale, save_screenshot=False)
+        if result[0]:
+            time.sleep(1.5)
+            # Прокрутка колесом вниз (например, для уменьшения масштаба) внутри фрейма
+            scroll_wheel(page, delta_y=300, steps=3)
+            season_iteration_count = 0
+            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Начинаем сбор в сезонной локации')
+            while season_iteration_count <= max_season_iteration_count:
+                print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Итерация в сезонной локации #{season_iteration_count}')
+                result = track_object_with_optical_flow(page, season_loot_image, best_scale, threshold=0.6)
+                if result:
+                    season_loot_clicks_count += 1
+                    print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Похоже мы нашли гемку {advert_clicks_count} раз, но хз, собрано ли...')
+
+                result = track_object_with_optical_flow(page, advert_image, best_scale, threshold=0.6)
+                if result:
+                    advert_clicks_count += 1
+                    print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Похоже мы нашли гемку {advert_clicks_count} раз, но хз, собрано ли...')
+
+                season_iteration_count += 1
+            season_iteration_count = 0
+            click_static_template(page, station_image, best_scale, save_screenshot=False, threshold=0.6)
+            time.sleep(2)
+            scroll_wheel(page, delta_y=300, steps=3)
+#endregion
+
 #region Логика скрипта
 
 # Запуск функции отслеживания комбинаций клавиш в отдельном потоке
@@ -825,7 +870,7 @@ with sync_playwright() as p:
             perform_mouse_scroll(page, distance_percentage_y=2)  # Вниз
             error_counter = 0
             
-        result = find_template(page, kicked_image, best_scale=1)
+        result = find_template_with_alpha(page, kicked_image, best_scale=1)
         if(result[0]):
             print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Похоже нас кикнули снова, перегружаем страницу.')
             reload_page(page)
@@ -834,11 +879,13 @@ with sync_playwright() as p:
         close_advert(page,best_scale)
         
         click_static_template(page, station_image, best_scale, save_screenshot=False)
-        found, store_location, screenshot = find_template(page, store_image, best_scale, threshold=0.7)
+        found, store_location, screenshot = find_template_with_alpha(page, store_image, best_scale, threshold=0.7)
         if not found:
-            error_counter += 1
-            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Область с шаблоном store.png не найдена, пропускаем итерацию - {error_counter} из {max_errors}')
-            continue
+            found, store_location, screenshot = find_template_with_alpha(page, locomotive_image, best_scale, threshold=0.7)
+            if not found:
+                error_counter += 1
+                print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Область с знакомыми шаблонами не найдена, пропускаем итерацию - {error_counter} из {max_errors}')
+                continue
         else:
             iteration_count += 1
             print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Новая итерация #{iteration_count}.')
@@ -862,10 +909,18 @@ with sync_playwright() as p:
                 print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Похоже мы нашли гемку {advert_clicks_count} раз, но хз, собрано ли...')
             last_advert_time = current_time
 
+        # Сбор лута в сезонной локации каждые 5 минут
+        '''
+        if current_time - last_season_region_time >= season_region_inteval:
+            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Пришло время собрать сезонный лут')
+            collect_season_loots(page, best_scale)
+            last_season_region_time = current_time
+        '''
+
         # Проверка на запуск второй копии игры каждые 30 секунд
-        if current_time - last_restart >= restart_interval:
+        if current_time - last_restart_time >= restart_interval:
             # Проверка и нажатие на restart изображение если оно есть, значит есть второй вход - ждём 5 минут
-            result = find_template(page, restart_image, best_scale)
+            result = find_template_with_alpha(page, restart_image, best_scale)
             if result:
                 if result[0]:
                     print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Есть второй вход - ждём 5 минут.')
@@ -911,10 +966,10 @@ with sync_playwright() as p:
             if result:
                 time.sleep(0.5)
                 # Нажатие на кнопку сбора безрекламных шестерёнок
-                result = click_static_template(page, basket_free_image, best_scale, offset_y=160, threshold=0.7, save_screenshot=False)
+                result = click_static_template(page, basket_free_image, best_scale, offset_y=160, threshold=0.65, save_screenshot=False)
                 if result:
                     # Нажатие на кнопку сбора безрекламных шестерёнок
-                    result, gear_pos_x, gear_pos_y = click_static_template(page, start_free_gear_image, best_scale, offset_y=160, threshold=0.7, save_screenshot=False)
+                    result, gear_pos_x, gear_pos_y = click_static_template(page, start_free_gear_image, best_scale, offset_y=160, threshold=0.65, save_screenshot=False)
                     if result:
                         if(get_gear_pos == 0,0):
                             get_gear_pos = gear_pos_x, gear_pos_y
@@ -922,7 +977,7 @@ with sync_playwright() as p:
                         press_escape(page)
                         time.sleep(1)
                 # Нажатие на кнопку сбора рекламных шестерёнок
-                result = click_static_template(page, basket_advert_image, best_scale, offset_y=160, threshold=0.7, save_screenshot=False)
+                result = click_static_template(page, basket_advert_image, best_scale, offset_y=160, threshold=0.65, save_screenshot=False)
                 if result:
                     # Нажатие на кнопку сбора рекламных шестерёнок
                     if(get_gear_pos[0] != 0):
@@ -934,7 +989,7 @@ with sync_playwright() as p:
                 press_escape(page)
                 last_basket_time = current_time
         # Задержка перед следующей итерацией
-        time.sleep(1)
+        time.sleep(0.1)
     #key_thread.join()
     #'''
 #endregion
