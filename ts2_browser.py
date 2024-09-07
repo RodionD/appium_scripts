@@ -861,6 +861,7 @@ with sync_playwright() as p:
     if not page: # Если вкладка не найдена, открываем новую
         page = context.new_page()
         page.goto("https://portal.pixelfederation.com/en/trainstation2")
+        time.sleep(60)
     
     # Прокрутка колесом вниз (например, для уменьшения масштаба) внутри фрейма
     scroll_wheel(page, delta_y=300, steps=3)
