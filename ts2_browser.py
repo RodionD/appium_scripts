@@ -997,7 +997,7 @@ with sync_playwright() as p:
                 if result:
                     # Нажатие на кнопку сбора рекламных шестерёнок
                     if(get_gear_pos[0] != 0):
-                        click_by_pos(get_gear_pos[0], get_gear_pos[1])
+                        click_by_pos(x=get_gear_pos[0], y=get_gear_pos[1])
                         time.sleep(2)
                         close_advert(page, best_scale)
                         time.sleep(3)
