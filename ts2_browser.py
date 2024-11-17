@@ -44,6 +44,7 @@ road_image = f'{images_path}road.png'
 kicked_image = f'{images_path}kicked.png'
 locomotive_image = f'{images_path}locomotive.png'
 season_image = f'{images_path}season.png'
+settings_image = f'{images_path}settings.png'
 #endregion
 
 #region Обявление переменных
@@ -515,22 +516,144 @@ def click_moving_template(page, template_image, best_scale, threshold=0.8, searc
     return True
 #endregion
 
+#region Функция поиска массива одинаковых объектов и нажатия на один из них
+def track_and_click_moving_objects(page, template_image, best_scale, threshold=0.8, max_objects=5, max_attempts=3, radius=10, delay_time=0.2):
+    """
+    Точный поиск и нажатие на движущиеся объекты с прогнозированием положения.
+    
+    :param page: Страница с игрой.
+    :param template_image: Путь к изображению шаблона объекта.
+    :param best_scale: Масштаб для поиска шаблона.
+    :param threshold: Порог совпадения.
+    :param max_objects: Максимальное количество объектов для отслеживания.
+    :param max_attempts: Максимальное количество попыток для отслеживания.
+    :param radius: Радиус предсказания нового положения объекта для клика.
+    :param delay_time: Задержка между кадрами (в секундах).
+    :return: True, если объект найден и нажат, иначе False.
+    """
+    try:
+        screenshot1 = get_screenshot(page)
+        if screenshot1 is None:
+            print(f"[{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] Не удалось получить первый скриншот.")
+            return False
+
+        # Шаблонное совпадение
+        template = cv2.imread(template_image, cv2.IMREAD_COLOR)
+        if template is None:
+            print(f"[{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] Шаблон не найден: {template_image}")
+            return False
+        
+        template_resized = cv2.resize(template, (0, 0), fx=best_scale, fy=best_scale)
+        result = cv2.matchTemplate(screenshot1, template_resized, cv2.TM_CCOEFF_NORMED)
+        loc = np.where(result >= threshold)
+
+        # Определяем координаты всех найденных объектов
+        points = [(pt[0] + template_resized.shape[1] // 2, pt[1] + template_resized.shape[0] // 2) for pt in zip(*loc[::-1])]
+
+        if len(points) == 0:
+            #print(f"[{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] Движущиеся объекты не найдены.")
+            return False
+
+        points = points[:max_objects]  # Ограничиваем количество объектов
+
+        # Optical Flow для отслеживания
+        lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+        prev_points = np.array(points, dtype=np.float32).reshape(-1, 1, 2)
+
+        time.sleep(delay_time)
+        for attempt in range(max_attempts):
+            screenshot2 = get_screenshot(page)
+            if screenshot2 is None:
+                print(f"[{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] Не удалось получить второй скриншот.")
+                continue
+
+            # Оптический поток
+            next_points, status, _ = cv2.calcOpticalFlowPyrLK(
+                cv2.cvtColor(screenshot1, cv2.COLOR_BGR2GRAY),
+                cv2.cvtColor(screenshot2, cv2.COLOR_BGR2GRAY),
+                prev_points, None, **lk_params
+            )
+
+            # Фильтруем корректные точки
+            valid_points = [(pt, prev_pt) for pt, prev_pt, st in zip(next_points, prev_points, status) if st[0] == 1]
+
+            if len(valid_points) == 0:
+                #print(f"[{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] Не удалось отследить объекты.")
+                return False
+
+            # Прогнозируем положение первого объекта
+            for pt, prev_pt in valid_points:
+                dx = pt[0][0] - prev_pt[0][0]
+                dy = pt[0][1] - prev_pt[0][1]
+
+                # Прогнозируем новое положение
+                predicted_x = float(pt[0][0] + dx * delay_time / (delay_time + 0.1))
+                predicted_y = float(pt[0][1] + dy * delay_time / (delay_time + 0.1))
+
+                # Эмулируем клик
+                click_and_hold(page, int(predicted_x), int(predicted_y), delay_time)  # Пауза для обновления положения
+
+                # Закрытие рекламы (или других окон) после клика
+                close_advert(page, best_scale)
+                #print(f"[{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] Успешно кликнул по объекту на ({predicted_x}, {predicted_y}).")
+                return True
+
+    except Exception as e:
+        print(f"[{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] Ошибка при отслеживании объекта: {e}")
+        return False
+    return False
+#endregion
+
+#region Функция рисования маркера на месте нажатия
+def add_click_marker(page, x, y):
+    """
+    Добавляет визуальный маркер в браузере на месте клика.
+    
+    :param page: Страница, на которой добавляется маркер.
+    :param x: Координата X для маркера.
+    :param y: Координата Y для маркера.
+    """
+    page.evaluate(f"""
+        (() => {{
+            const marker = document.createElement('div');
+            marker.style.position = 'absolute';
+            marker.style.left = '{x - 5}px';
+            marker.style.top = '{y - 5}px';
+            marker.style.width = '50px';
+            marker.style.height = '50px';
+            marker.style.backgroundColor = 'red';
+            marker.style.borderRadius = '50%';
+            marker.style.zIndex = '9999';
+            marker.style.pointerEvents = 'none';
+            document.body.appendChild(marker);
+
+            // Удаляем маркер через 1 секунду
+            setTimeout(() => marker.remove(), 1000);
+        }})();
+    """)
+#endregion
+
 #region Функция нажатия на координаты с зажатием
 def click_and_hold(page, x, y, hold_time=0.2):
     """
-    Функция для клика с зажатием на малое время.
+    Кликает с удержанием мыши на указанной позиции и добавляет визуальный маркер.
     
-    :param page: Страница, на которой выполняется клик
-    :param x: Координата X для клика
-    :param y: Координата Y для клика
-    :param hold_time: Время удержания клика в секундах
+    :param page: Страница, на которой выполняется клик.
+    :param x: Координата X для клика.
+    :param y: Координата Y для клика.
+    :param hold_time: Время удержания клика в секундах.
     """
+    # Добавляем маркер в браузере
+    add_click_marker(page, x, y)
+
     # Перемещаем мышь на координаты объекта
     page.mouse.move(x, y)
     
     # Нажимаем и удерживаем кнопку
     page.mouse.down()
-    time.sleep(hold_time)  # Удерживаем нажатие в течение заданного времени
+
+    # Удерживаем нажатие в течение заданного времени
+    time.sleep(hold_time)
 
     # Отпускаем кнопку
     page.mouse.up()
@@ -845,6 +968,98 @@ def collect_season_loots(page, best_scale):
             scroll_wheel(page, delta_y=300, steps=3)
 #endregion
 
+#region Сохранение состояния индикаторов ключей, гемов и монеток
+def save_area_state_to_variable(page, template_image, best_scale, offset_x=0, offset_y=0, area_size=(100, 100)):
+    """
+    Сохраняет состояние области на основе центра найденного шаблона в переменную.
+    
+    :param page: Страница с игрой
+    :param template_image: Путь к изображению шаблона
+    :param best_scale: Масштаб для поиска шаблона
+    :param offset_x: Смещение по оси X относительно центра шаблона (до масштабирования)
+    :param offset_y: Смещение по оси Y относительно центра шаблона (до масштабирования)
+    :param area_size: Размер области (ширина, высота) до масштабирования
+    :return: Изображение области (NumPy массив) или None
+    """
+    found, location, _ = find_template_with_alpha(page, template_image, best_scale, threshold=0.7)
+    if not found:
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Не удалось найти шаблон {template_image}.')
+        return None
+
+    center_x, center_y = location
+    # Применяем масштаб к координатам смещения
+    center_x += int(offset_x * best_scale)
+    center_y += int(offset_y * best_scale)
+
+    # Применяем масштаб к размеру области
+    width = int(area_size[0] * best_scale)
+    height = int(area_size[1] * best_scale)
+
+    top = max(0, center_y - height // 2)
+    bottom = top + height
+    left = max(0, center_x - width // 2)
+    right = left + width
+
+    screenshot_array = get_screenshot(page)
+    if screenshot_array is None:
+        return None
+
+    # Извлекаем область
+    area = screenshot_array[top:bottom, left:right]
+    screen_name = template_image.replace(f'{images_path}','')
+    screen_name = screen_name.replace('.png','')
+    cv2.imwrite(f'{screenshot_directory}/{screen_name}0.png', area)
+
+    return area, (left, top, width, height)
+#endregion
+
+#region Прверка сборки ключей, гемов или монеток
+#endregion
+def check_area_changes_with_variable(page, best_scale, reference_image, area_coords, template_image=None, threshold=0.8):
+    """
+    Проверяет изменения области на основе эталонного изображения (из переменной) и координат с учётом масштаба.
+    
+    :param page: Страница с игрой.
+    :param reference_image: Эталонное изображение (NumPy массив).
+    :param area_coords: Координаты области (x, y, width, height) до масштабирования.
+    :param best_scale: Масштаб, использованный при сохранении эталонного состояния.
+    :param threshold: Порог совпадения.
+    :return: True, если изменения обнаружены, иначе False.
+    """
+    if reference_image is None or area_coords is None:
+        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Эталонное изображение или координаты не заданы.')
+        return False
+
+    # Масштабируем координаты и размеры области
+    x, y, width, height = area_coords
+    x = int(x * best_scale)
+    y = int(y * best_scale)
+    width = int(width * best_scale)
+    height = int(height * best_scale)
+
+    screenshot_array = get_screenshot(page)
+    if screenshot_array is None:
+        return False
+
+    # Извлекаем текущую область
+    current_area = screenshot_array[y:y + height, x:x + width]
+
+    # Сравнение текущей области с эталонной
+    res = cv2.matchTemplate(current_area, reference_image, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, _ = cv2.minMaxLoc(res)
+
+    if template_image is not None:
+        screen_name = template_image.replace(f'{images_path}','')
+        screen_name = screen_name.replace('.png','')
+        cv2.imwrite(f'{screenshot_directory}/{screen_name}1.png', current_area)
+        #print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Второй скрин {screen_name} сохранён.')
+
+    if max_val < threshold:
+        #print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Обнаружены изменения в области.')
+        return True
+    else:
+        #print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Изменений в области не обнаружено.')
+        return False
 #region Логика скрипта
 
 # Запуск функции отслеживания комбинаций клавиш в отдельном потоке
@@ -861,7 +1076,7 @@ with sync_playwright() as p:
     if not page: # Если вкладка не найдена, открываем новую
         page = context.new_page()
         page.goto("https://portal.pixelfederation.com/en/trainstation2")
-        time.sleep(60)
+        time.sleep(120)
     
     # Прокрутка колесом вниз (например, для уменьшения масштаба) внутри фрейма
     scroll_wheel(page, delta_y=300, steps=3)
@@ -911,18 +1126,52 @@ with sync_playwright() as p:
         # Проверка и нажатие на loot изображения каждые 5 секунд
         if current_time - last_loot_time >= loot_interval:
             for loot_image in loot_images:
-                result = track_object_with_optical_flow(page, loot_image, best_scale, threshold=0.6)
+                key_gem_coins_area, key_gem_coins_coord = None, None
+                result = save_area_state_to_variable(page, settings_image, best_scale, offset_x=-270, offset_y=0, area_size=(400, 32))
+                if result is not None:
+                    key_gem_coins_area, key_gem_coins_coord = result
+                store_area, store_coord = None, None
+                result = save_area_state_to_variable(page, store_image, best_scale, offset_x=50, offset_y=0, area_size=(200, 50))
+                if result is not None:
+                    store_area, store_coord = result
+                #result = track_object_with_optical_flow(page, loot_image, best_scale, threshold=0.6)
+                result = None
+                result = track_and_click_moving_objects(page, loot_image, best_scale, threshold=0.6, max_attempts=3)
                 if result:
                     loot_clicks_count += 1
-                    print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Что-то из лута было найдено {loot_clicks_count} раз, но хз, собрано ли...')
+                    if key_gem_coins_area is not None:
+                        time.sleep(1)
+                        if key_gem_coins_area is not None and key_gem_coins_coord is not None:
+                            key_gem_coins_changed = check_area_changes_with_variable(page, best_scale, key_gem_coins_area, key_gem_coins_coord, template_image=settings_image)
+                            if key_gem_coins_changed:
+                                print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Собрали что-то из вкусняшек!')
+                        if store_area is not None and store_coord is not None:
+                            store_changed = check_area_changes_with_variable(page, best_scale, store_area, store_coord, template_image=store_image)
+                            if store_changed:
+                                print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Собрали что-то на склад!')
+                        if not key_gem_coins_changed and not store_changed:
+                            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Что-то из лута было найдено {loot_clicks_count} раз, но хз, собрано ли...')    
+                    else:
+                        print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Что-то из лута было найдено {loot_clicks_count} раз, но хз, собрано ли...')
             last_loot_time = current_time
 
         # Проверка и нажатие на advert изображение каждые 5 секунд
         if current_time - last_advert_time >= advert_interval:
+            key_gem_coins_area, key_gem_coins_coord = None, None
+            key_gem_coins_area, key_gem_coins_coord = save_area_state_to_variable(page, settings_image, best_scale, offset_x=-270, offset_y=0, area_size=(400, 32))
             result = track_object_with_optical_flow(page, advert_image, best_scale, threshold=0.6)
             if result:
                 advert_clicks_count += 1
-                print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Похоже мы нашли гемку {advert_clicks_count} раз, но хз, собрано ли...')
+                if key_gem_coins_area is not None:
+                    time.sleep(1)
+                    if key_gem_coins_area is not None and key_gem_coins_coord is not None:
+                        key_gem_coins_changed = check_area_changes_with_variable(page, best_scale, key_gem_coins_area, key_gem_coins_coord, template_image=settings_image)
+                        if key_gem_coins_changed:
+                            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Собрали что-то из вкусняшек!')
+                        else:
+                            print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Похоже мы нашли гемку {advert_clicks_count} раз, но хз, собрано ли...')
+                else:
+                    print(f'[{datetime.now().strftime("%d/%m/%Y %H:%M:%S")}] Похоже мы нашли гемку {advert_clicks_count} раз, но хз, собрано ли...')
             last_advert_time = current_time
 
         # Сбор лута в сезонной локации каждые 5 минут
@@ -1004,6 +1253,7 @@ with sync_playwright() as p:
                 # Закрытие окна корзины
                 press_escape(page)
                 last_basket_time = current_time
+
         # Задержка перед следующей итерацией
         time.sleep(0.1)
     #key_thread.join()
